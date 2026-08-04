@@ -1,0 +1,443 @@
+openapi: 3.0.3
+info:
+  title: sop-system API (Phase 2 接口契约 / SPEC v1.0 §5)
+  version: 1.0.0
+  description: |
+    本文件是 Phase 2 最终锁定的接口契约，前端（贾思敏）与后端（贝洛奇）联调的唯一依据。
+    依据 docs/SPEC-v1.0.md 第 5 节（API 端点清单，锁定）与 docs/tech-spec-phase1.md §6.2（端点草案）。
+
+    版本化：服务端对 router 做 /api 与 /api/v1 双挂载（app.use('/api/v1', router); app.use('/api', router)）。
+    本文件所有端点以 /api/v1 为准；新前端代码统一用 /api/v1；存量端点保持可用。
+
+    响应包络：所有【新增】端点统一使用 { code, data, message } 包络（components.schemas.Envelope）。
+    存量端点（/api/auth/*、/api/requirements/* 等）保持裸 JSON，本次不改造，不在本文件范围内。
+
+    认证：全局需 Bearer Token（登录）。admin 端点额外要求 ADMIN 角色（后端 adminOnly 中间件校验）；
+    code-context 端点仅要求登录（任意角色）。各端点 description 已标注角色要求与对应 SPEC §5 行号。
+
+servers:
+  - url: http://localhost:4000
+    description: 本地开发
+
+tags:
+  - name: ai-provider
+    description: AI 模型配置（密钥加密存储，F1）
+  - name: ai-task
+    description: AI 调用记录与可观测性（B2）
+  - name: repo-sync
+    description: GitLab 代码模块同步（受 5 次/分限流约束，ADR-005）
+  - name: code-context
+    description: 代码感知上下文回显（F2 前置，ADR-008）
+
+security:
+  - BearerAuth: []
+
+paths:
+  /api/v1/admin/ai-providers:
+    get:
+      tags: [ai-provider]
+      operationId: listAiProviders
+      summary: AI Provider 列表（密钥掩码）
+      description: |
+        【SPEC v1.0 §5 L96】AI Provider 列表（密钥掩码）。需 ADMIN 角色。
+        api_key 一律以掩码返回（api_key_masked），绝不回传明文。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AiProvider' }
+    post:
+      tags: [ai-provider]
+      operationId: createAiProvider
+      summary: 新增 AI Provider（密钥加密入库）
+      description: |
+        【SPEC v1.0 §5 L97】新增 Provider（密钥加密入库）。需 ADMIN 角色。
+        api_key 明文传入，服务端以 AES-256-GCM 加密后写入（F1），明文不落盘、不回显。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiProviderCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiProvider' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/admin/ai-providers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    put:
+      tags: [ai-provider]
+      operationId: updateAiProvider
+      summary: 更新 AI Provider（•••••••• 表示不改密钥）
+      description: |
+        【SPEC v1.0 §5 L98】更新（•••••••• 表示不改密钥）。需 ADMIN 角色。
+        api_key 传入哨兵值 "••••••••" 表示【不修改现有密钥】（沿用 gitlab 配置约定）；
+        传入其他非空值则重新加密覆盖。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiProviderUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiProvider' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [ai-provider]
+      operationId: deleteAiProvider
+      summary: 删除 AI Provider
+      description: |
+        【SPEC v1.0 §5 L99】删除。需 ADMIN 角色。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/admin/ai-providers/{id}/test:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [ai-provider]
+      operationId: testAiProvider
+      summary: 连通性测试与能力探测
+      description: |
+        【SPEC v1.0 §5 L100】连通性测试（返回延迟/模型/能力）。需 ADMIN 角色。
+        发起一次最小成本的真实调用，区分「未配置」与「配置错误」（修复静默降级盲区，B2）。
+        返回实际可用的结构化输出能力等级 capability（json_schema/json_object/prompt_only）。
+      responses:
+        '200':
+          description: 测试完成（ok=false 也返回 200，错误内容在 data 中）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiProviderTestResult' }
+
+  /api/v1/admin/ai-tasks:
+    get:
+      tags: [ai-task]
+      operationId: listAiTasks
+      summary: AI 调用记录（含降级原因，分页）
+      description: |
+        【SPEC v1.0 §5 L101】AI 调用记录（含降级原因，分页）。需 ADMIN 角色。
+        对应 ai_tasks 表（B2 可观测性）：记录每次 AI 节点调用的 provider/model/结构化级别/降级原因/耗时。
+      parameters:
+        - { name: requirement_id, in: query, schema: { type: integer } }
+        - { name: status, in: query, schema: { type: string, enum: [OK, DEGRADED, FAILED] } }
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Page'
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: '#/components/schemas/AiTask' }
+
+  /api/v1/admin/modules/{id}/sync:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [repo-sync]
+      operationId: syncModule
+      summary: 触发模块代码同步（入队语义，返回 task_id）
+      description: |
+        【SPEC v1.0 §5 L102】触发同步（入队语义，返回 task_id）。需 ADMIN 角色。
+        变更：由「同步执行」改为「入队」。原因：GitLab archive 官方限流 5 次/分钟/用户且 GitLab.com 不可配置（ADR-005）。
+        队列串行执行，间隔 >= 12s；遇 429 读 Retry-After 退避，最多重试 3 次。
+        前端须按异步任务处理，通过 GET /api/v1/admin/sync-tasks/{taskId} 轮询。
+      responses:
+        '202':
+          description: 已入队
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          task_id: { type: integer, description: 轮询用的同步任务 ID }
+                          queue_position: { type: integer, description: 队列中位次，0 表示立即执行 }
+                          eta_seconds: { type: integer, description: 预计开始秒数（按 12s/次估算） }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/admin/sync-tasks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [repo-sync]
+      operationId: getSyncTask
+      summary: 同步任务状态轮询
+      description: |
+        【SPEC v1.0 §5 L103】同步任务状态轮询。需 ADMIN 角色。
+        前端按此端点轮询 task_id 的状态（QUEUED/RUNNING/OK/FAILED），失败时给出重试入口。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SyncTask' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/requirements/{id}/code-context:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [code-context]
+      operationId: getRequirementCodeContext
+      summary: 回显本次 AI 实际读取的文件清单
+      description: |
+        【SPEC v1.0 §5 L104】回显本次 AI 实际读取的文件清单。需登录（任意角色，非仅 admin）。
+        让使用者能判断 AI 结论的可信度——当前用户无法得知 AI 到底看了哪些文件（F2 回显要求）。
+        注意：本端点回显的是【已通过 F2 敏感过滤】的文件清单（ADR-008），敏感配置不会出现在 files 中。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CodeContextResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: 登录后下发的 x-token / Bearer Token。admin 端点后端额外校验 ADMIN 角色。
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+      description: 资源主键 ID
+
+  responses:
+    BadRequest:
+      description: 参数校验失败
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example: { code: 1001, data: null, message: "module_key 只允许小写字母、数字、下划线与连字符" }
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example: { code: 1004, data: null, message: "资源不存在" }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [code, data, message]
+      properties:
+        code: { type: integer, description: "0=成功，非0=错误码", example: 0 }
+        data: { nullable: true, description: 业务数据；错误时为 null }
+        message: { type: string, example: "" }
+
+    Page:
+      type: object
+      description: 分页响应包
+      properties:
+        total: { type: integer, description: 总条数 }
+        page: { type: integer, description: 当前页 }
+        limit: { type: integer, description: 每页条数 }
+        hasMore: { type: boolean, description: 是否还有下一页 }
+
+    ProviderCapability:
+      type: string
+      enum: [json_schema, json_object, prompt_only]
+      description: |
+        该 Provider 实际可用的结构化输出能力级别（单值，对应 ai_providers.capability 字段）：
+        - json_schema：支持强约束结构化输出（L1，Anthropic output_config / Kimi json_schema）
+        - json_object：仅支持弱约束 JSON 模式（L2，DeepSeek/GLM/通义；启用时 prompt 必须含 "json" 字面量否则 400）
+        - prompt_only：无 response_format 字段（L3，混元/MiniMax），靠提示词兜底 + 抽取 JSON 块
+
+    AiProvider:
+      type: object
+      description: Provider 读响应（含能力字段，密钥恒掩码）
+      properties:
+        id: { type: integer }
+        name: { type: string, example: "DeepSeek 主力" }
+        type: { type: string, enum: [anthropic, openai-compat, mock] }
+        base_url: { type: string, example: "https://api.deepseek.com" }
+        api_key_masked:
+          type: string
+          description: 恒为掩码，永不回传明文
+          example: "••••••••"
+        api_key_set: { type: boolean, description: 是否已配置密钥 }
+        model: { type: string, example: "deepseek-chat" }
+        capability: { $ref: '#/components/schemas/ProviderCapability' }
+        enabled: { type: boolean }
+        last_tested_at: { type: string, nullable: true }
+        last_test_error: { type: string, nullable: true }
+
+    AiProviderCreate:
+      type: object
+      description: 新增 Provider 请求体（SPEC §5 L97：{type, model, api_key, base_url}）
+      required: [type, model, api_key, base_url]
+      properties:
+        name: { type: string, description: "管理标识，建议必填（SPEC §5 未列但管理需要）", example: "DeepSeek 主力" }
+        type: { type: string, enum: [anthropic, openai-compat, mock] }
+        base_url: { type: string, example: "https://api.deepseek.com" }
+        api_key:
+          type: string
+          description: 明文密钥；服务端 AES-256-GCM 加密后存储（F1），绝不回显
+        model: { type: string, example: "deepseek-chat" }
+        enabled: { type: boolean, default: true }
+
+    AiProviderUpdate:
+      type: object
+      description: 更新 Provider 请求体（SPEC §5 L98：全可选；api_key 传 "••••••••" 表示不改）
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [anthropic, openai-compat, mock] }
+        base_url: { type: string }
+        api_key:
+          type: string
+          description: 传 "••••••••" 表示不修改现有密钥；其他非空值重新加密覆盖
+        model: { type: string }
+        enabled: { type: boolean }
+
+    AiProviderTestResult:
+      type: object
+      description: 连通性测试结果（SPEC §5 L100：{ok, latency_ms, capability}）
+      properties:
+        ok: { type: boolean, description: 连通是否成功 }
+        latency_ms: { type: integer, nullable: true, description: 首字节到末字节耗时 }
+        capability: { $ref: '#/components/schemas/ProviderCapability', description: 探测得出的能力级别 }
+        model_echo: { type: string, nullable: true, description: 服务端实际返回的模型标识 }
+        structured_level: { type: string, enum: [L1, L2, L3], nullable: true, description: 探测得出的结构化级别 }
+        error:
+          type: string
+          nullable: true
+          description: 失败原因（如 "401 invalid api key"），用于区分未配置与配置错误
+
+    AiTask:
+      type: object
+      description: 单次 AI 调用记录（ai_tasks 表，B2 可观测性）
+      properties:
+        id: { type: integer }
+        requirement_id: { type: integer, nullable: true }
+        node_id: { type: integer, nullable: true }
+        action: { type: string, enum: [PRECHECK, EVALUATE, PRD_GEN, DEV_PROMPT, TEST_CASE, CUSTOM] }
+        provider_type: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        status: { type: string, enum: [OK, DEGRADED, FAILED] }
+        degraded_reason:
+          type: string
+          nullable: true
+          description: 降级原因枚举：no_provider / timeout / schema_validation_failed / 401 / rate_limited
+        structured_level: { type: string, enum: [L1, L2, L3, mock], nullable: true }
+        latency_ms: { type: integer, nullable: true }
+        prompt_tokens: { type: integer, nullable: true }
+        completion_tokens: { type: integer, nullable: true }
+        code_files_used:
+          type: array
+          items: { type: string }
+          description: 本次注入 prompt 的代码文件相对路径（已通过 F2 敏感过滤）
+        created_at: { type: string }
+
+    SyncTask:
+      type: object
+      description: 同步任务状态（sync_tasks 表）
+      properties:
+        id: { type: integer }
+        module_id: { type: integer }
+        status: { type: string, enum: [QUEUED, RUNNING, OK, FAILED] }
+        attempt: { type: integer, description: 已尝试次数（含重试） }
+        error_msg: { type: string, nullable: true }
+        started_at: { type: string, nullable: true }
+        finished_at: { type: string, nullable: true }
+        result:
+          type: object
+          nullable: true
+          properties:
+            commit_sha: { type: string }
+            file_count: { type: integer }
+            archive_mb: { type: number }
+
+    CodeContextResponse:
+      type: object
+      description: 代码上下文回显（SPEC §5 L104：{files:[...]}）
+      properties:
+        generated_at: { type: string, nullable: true }
+        action: { type: string, nullable: true }
+        total_chars: { type: integer, description: 注入 prompt 的总字符数 }
+        budget_chars: { type: integer, description: 本次预算上限（按 provider 窗口动态计算） }
+        truncated: { type: boolean, description: 是否因预算触顶被截断 }
+        modules:
+          type: array
+          items:
+            type: object
+            properties:
+              platform: { type: string }
+              module_key: { type: string }
+              branch: { type: string }
+              commit: { type: string }
+              sync_status: { type: string }
+              tree_entries: { type: integer }
+              files:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    path: { type: string }
+                    chars: { type: integer }
+                    truncated: { type: boolean }

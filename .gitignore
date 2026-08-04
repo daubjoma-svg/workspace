@@ -1,0 +1,16 @@
+node_modules/
+dist/
+
+# 运行期数据：SQLite 库、WAL 日志、仓库快照，均不入版本控制
+server/data/
+*.db
+*.db-shm
+*.db-wal
+
+# 环境变量（含 SOP_MASTER_KEY，绝不入仓）
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log

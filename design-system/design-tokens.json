@@ -1,0 +1,174 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "$description": "sop-system 设计 Token — Blueprint Calm（蓝图冷静）设计语言 · DTCG 格式 · 前端 import 使用",
+  "$meta": {
+    "author": "颜好看 (UI/UX Designer)",
+    "version": "1.0.0",
+    "register": "Product（设计服务产品）",
+    "language": "Blueprint Calm",
+    "threeAxis": { "DESIGN_VARIANCE": 3, "MOTION_INTENSITY": 3, "VISUAL_DENSITY": 7 }
+  },
+
+  "base": {
+    "font": {
+      "display": {
+        "$value": ["Geist", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "sans-serif"],
+        "$type": "fontFamily",
+        "$description": "Display 字体：页面标题、统计大数字、Hero 数值。Geist 工程精度感 + 天然 tabular-nums"
+      },
+      "body": {
+        "$value": ["Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "-apple-system", "sans-serif"],
+        "$type": "fontFamily",
+        "$description": "Body 字体：正文/表格/表单/导航/按钮。开启 cv01 ss03 tnum 特征"
+      },
+      "cn": {
+        "$value": ["Noto Sans SC", "PingFang SC", "Microsoft YaHei", "sans-serif"],
+        "$type": "fontFamily",
+        "$description": "中文回退栈（思源黑体），与 Inter/Geist 字重轴匹配"
+      },
+      "mono": {
+        "$value": ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        "$type": "fontFamily",
+        "$description": "等宽：单号/分支/commit/diff/时间戳/Token数/模型名。0/O、1/l 区分度高"
+      }
+    },
+    "text": {
+      "xs":  { "$value": "0.75rem",  "$type": "dimension", "$description": "12px 元数据/时间戳/徽章" },
+      "sm":  { "$value": "0.8125rem","$type": "dimension", "$description": "13px 表格单元格/次级说明（密度7主力）" },
+      "base":{ "$value": "0.875rem", "$type": "dimension", "$description": "14px 正文/表单/按钮" },
+      "md":  { "$value": "1rem",     "$type": "dimension", "$description": "16px AI产物长文正文" },
+      "lg":  { "$value": "1.125rem", "$type": "dimension", "$description": "18px 卡片标题/需求标题" },
+      "xl":  { "$value": "1.25rem",  "$type": "dimension", "$description": "20px 区块标题" },
+      "2xl": { "$value": "1.5rem",   "$type": "dimension", "$description": "24px 页面标题 H1" },
+      "3xl": { "$value": "2rem",     "$type": "dimension", "$description": "32px 统计大数字（仅 Dashboard）" }
+    },
+    "leading": {
+      "xs": { "$value": "1.5",   "$type": "number" },
+      "sm": { "$value": "1.55",  "$type": "number" },
+      "base":{ "$value": "1.6",  "$type": "number" },
+      "md": { "$value": "1.7",   "$type": "number" },
+      "lg": { "$value": "1.35",  "$type": "number" },
+      "xl": { "$value": "1.25",  "$type": "number" },
+      "2xl":{ "$value": "1.15",  "$type": "number" }
+    },
+    "weight": {
+      "read":    { "$value": 400, "$type": "fontWeight", "$description": "正文/描述" },
+      "emphasis":{ "$value": 510, "$type": "fontWeight", "$description": "表格表头/按钮/小标题（可变字体轴，中文回退500）" },
+      "announce":{ "$value": 590, "$type": "fontWeight", "$description": "页面标题/强调（中文回退600）" }
+    },
+    "tracking": {
+      "body":   { "$value": "0em",     "$type": "dimension", "$description": "正文 14-16px" },
+      "small":  { "$value": "0.01em",  "$type": "dimension", "$description": "小字 12-13px" },
+      "caps":   { "$value": "0.06em",  "$type": "dimension", "$description": "ALL CAPS 标签（表头/section标题）必加" },
+      "heading":{ "$value": "-0.015em","$type": "dimension", "$description": "标题 ≥24px" },
+      "display":{ "$value": "-0.025em","$type": "dimension", "$description": "展示数字 ≥32px" }
+    },
+    "radius": {
+      "sm":   { "$value": "6px",    "$type": "dimension", "$description": "控件/徽章/输入框" },
+      "md":   { "$value": "12px",   "$type": "dimension", "$description": "卡片/下拉/浮层" },
+      "lg":   { "$value": "16px",   "$type": "dimension", "$description": "模态/大面" },
+      "pill": { "$value": "9999px", "$type": "dimension", "$description": "pill 标签/按钮" }
+    },
+    "space": {
+      "1":  { "$value": "4px",  "$type": "dimension" },
+      "2":  { "$value": "8px",  "$type": "dimension" },
+      "3":  { "$value": "12px", "$type": "dimension" },
+      "4":  { "$value": "16px", "$type": "dimension" },
+      "5":  { "$value": "20px", "$type": "dimension" },
+      "6":  { "$value": "24px", "$type": "dimension" },
+      "8":  { "$value": "32px", "$type": "dimension" },
+      "10": { "$value": "40px", "$type": "dimension" },
+      "12": { "$value": "48px", "$type": "dimension" },
+      "16": { "$value": "64px", "$type": "dimension" }
+    },
+    "motion": {
+      "instant": { "$value": "0ms",   "$type": "duration", "$description": "Tab切换/筛选/排序/视图切换 — 0ms 往往是最好的选择" },
+      "fast":    { "$value": "120ms", "$type": "duration", "$description": "hover/focus/按钮态" },
+      "base":    { "$value": "180ms", "$type": "duration", "$description": "下拉/Toast/行展开" },
+      "slow":    { "$value": "240ms", "$type": "duration", "$description": "模态/抽屉" },
+      "ease":    { "$value": [0.2, 0, 0, 1], "$type": "cubicBezier", "$description": "全局标准缓动" }
+    },
+    "shadow": {
+      "flat": { "$value": "none", "$type": "shadow" },
+      "ring": {
+        "$value": "0 0 0 1px rgba(16, 23, 36, 0.10)",
+        "$type": "shadow",
+        "$description": "shadow-as-border 理念：用 1px 环代替实体边框，避免 box model 抖动（浅色值）"
+      },
+      "raised": {
+        "$value": "0 1px 2px rgba(16, 23, 36, 0.05), 0 4px 14px rgba(16, 23, 36, 0.06)",
+        "$type": "shadow",
+        "$description": "卡片抬升（浅色值）；深色态在 CSS 中覆盖"
+      },
+      "overlay": {
+        "$value": "0 4px 8px rgba(16, 23, 36, 0.06), 0 14px 34px rgba(16, 23, 36, 0.10)",
+        "$type": "shadow",
+        "$description": "模态/抽屉浮层（浅色值）"
+      }
+    }
+  },
+
+  "theme": {
+    "light": {
+      "$description": "浅色主题（默认）。冷调纸面，非奶油非米色。",
+      "color": {
+        "bg":            { "$value": "#F5F7FA", "$type": "color", "$role": "A1-identity" },
+        "surface":       { "$value": "#FFFFFF", "$type": "color", "$role": "A1-identity" },
+        "surface2":      { "$value": "#EEF2F6", "$type": "color", "$role": "B-slot", "$description": "表头/内嵌块/hover底" },
+        "fg":            { "$value": "#101724", "$type": "color", "$role": "A1-identity", "$description": "近黑带蓝铸调，非纯黑" },
+        "fg2":           { "$value": "#3C4859", "$type": "color", "$role": "B-slot", "$description": "正文次级（≈9:1）" },
+        "muted":         { "$value": "#5D6B7E", "$type": "color", "$role": "A1-identity", "$description": "5.05:1 on bg ✓ 12px 元数据安全线" },
+        "meta":          { "$value": "#7A8798", "$type": "color", "$role": "B-slot", "$description": "3.40:1 仅图标/分隔/≥16px弱化文本，禁12px正文" },
+        "border":        { "$value": "#E2E7EE", "$type": "color", "$role": "A1-identity" },
+        "borderSoft":    { "$value": "#EFF2F6", "$type": "color", "$role": "B-slot" },
+        "borderStrong":  { "$value": "#CBD3DE", "$type": "color", "$role": "B-slot" },
+        "accent":        { "$value": "#0E62A8", "$type": "color", "$role": "A1-identity", "$description": "Cyanotype 工程蓝墨。6.30:1 on white ✓ 每屏≤2处" },
+        "accentOn":      { "$value": "#FFFFFF", "$type": "color", "$role": "A2" },
+        "accentHover":   { "$value": "#0D5897", "$type": "color", "$role": "A2", "$description": "accent 90% + 黑 10%" },
+        "accentActive":  { "$value": "#0B508A", "$type": "color", "$role": "A2", "$description": "accent 82% + 黑 18%" },
+        "accentWash":    { "$value": "#0E62A814", "$type": "color", "$role": "A2", "$description": "accent 8% 透明 — 选中底/弱高亮" },
+        "success":       { "$value": "#12805C", "$type": "color", "$role": "A2-semantic", "$description": "4.92:1 深松绿，非 Tailwind green-600" },
+        "warn":          { "$value": "#B45309", "$type": "color", "$role": "A2-semantic", "$description": "5.02:1 深琥珀，做文字/语义" },
+        "warnBg":        { "$value": "#F59E0B", "$type": "color", "$role": "A2-semantic", "$description": "amber-500 仅作背景填充，配深色字" },
+        "warnBgInk":     { "$value": "#7C3F00", "$type": "color", "$role": "A2-semantic", "$description": "warnBg 上的文字色" },
+        "danger":        { "$value": "#B3261E", "$type": "color", "$role": "A2-semantic", "$description": "6.53:1 砖红" },
+        "brand":         { "$value": "#1E3A5F", "$type": "color", "$role": "A1-identity", "$description": "品牌藏青：登录Hero/侧栏logo底" },
+        "brandStrong":   { "$value": "#16293F", "$type": "color", "$role": "B-slot" },
+        "aiSurface":     { "$value": "#F7F9FB", "$type": "color", "$role": "C-extension", "$description": "AI『机器纸』冷灰底，比bg更冷更淡" },
+        "aiInk":         { "$value": "#3D4654", "$type": "color", "$role": "C-extension", "$description": "AI mono 标签色，石墨中性" },
+        "aiDash":        { "$value": "#C3CCD8", "$type": "color", "$role": "C-extension", "$description": "AI 虚线边框色" }
+      }
+    },
+    "dark": {
+      "$description": "深色主题（对等，非反色）。亮度阶梯法建立层级，不用阴影。",
+      "color": {
+        "bg":            { "$value": "#0E1116", "$type": "color", "$role": "A1-identity" },
+        "surface":       { "$value": "#151A21", "$type": "color", "$role": "A1-identity" },
+        "surface2":      { "$value": "#1C222B", "$type": "color", "$role": "B-slot" },
+        "surface3":      { "$value": "#262E39", "$type": "color", "$role": "B-slot", "$description": "hover/抬升" },
+        "fg":            { "$value": "#E9EEF5", "$type": "color", "$role": "A1-identity" },
+        "fg2":           { "$value": "#C3CCD9", "$type": "color", "$role": "B-slot" },
+        "muted":         { "$value": "#8B97A6", "$type": "color", "$role": "A1-identity" },
+        "meta":          { "$value": "#626D7B", "$type": "color", "$role": "B-slot" },
+        "border":        { "$value": "rgba(255, 255, 255, 0.07)", "$type": "color", "$role": "A1-identity" },
+        "borderSoft":    { "$value": "rgba(255, 255, 255, 0.04)", "$type": "color", "$role": "B-slot" },
+        "borderStrong":  { "$value": "rgba(255, 255, 255, 0.12)", "$type": "color", "$role": "B-slot" },
+        "accent":        { "$value": "#4FA6EE", "$type": "color", "$role": "A1-identity", "$description": "7.23:1 on bg ✓" },
+        "accentOn":      { "$value": "#06121D", "$type": "color", "$role": "A2", "$description": "深色态主按钮反色字" },
+        "accentHover":   { "$value": "#4795D6", "$type": "color", "$role": "A2" },
+        "accentActive":  { "$value": "#4188C3", "$type": "color", "$role": "A2" },
+        "accentWash":    { "$value": "#4FA6EE14", "$type": "color", "$role": "A2" },
+        "success":       { "$value": "#35B37E", "$type": "color", "$role": "A2-semantic" },
+        "warn":          { "$value": "#D9973E", "$type": "color", "$role": "A2-semantic" },
+        "warnBg":        { "$value": "#B45309", "$type": "color", "$role": "A2-semantic", "$description": "深色态用深琥珀作底，配浅色字" },
+        "warnBgInk":     { "$value": "#FFF1DC", "$type": "color", "$role": "A2-semantic" },
+        "danger":        { "$value": "#E5645C", "$type": "color", "$role": "A2-semantic" },
+        "brand":         { "$value": "#1E3A5F", "$type": "color", "$role": "A1-identity" },
+        "brandStrong":   { "$value": "#0F1F33", "$type": "color", "$role": "B-slot" },
+        "aiSurface":     { "$value": "#12171E", "$type": "color", "$role": "C-extension" },
+        "aiInk":         { "$value": "#9AA6B4", "$type": "color", "$role": "C-extension" },
+        "aiDash":        { "$value": "rgba(255, 255, 255, 0.14)", "$type": "color", "$role": "C-extension" }
+      }
+    }
+  }
+}
