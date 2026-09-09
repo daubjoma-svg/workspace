@@ -11,11 +11,12 @@
  */
 import type { LucideIcon } from 'lucide-react';
 import {
-  Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Ban, Building2, Check,
-  ChevronRight, CircleCheckBig, CircleDot, CircleDotDashed, ClipboardList, Code,
-  Cpu, FileText, FlaskConical, GitBranch, GitCommitHorizontal, GitMerge, Hammer,
-  Inbox, Layers, LayoutGrid, ListTodo, LogOut, Megaphone, MessageSquare, PackageOpen,
-  Pencil, Plus, Repeat, Search, Settings2, Table2, TriangleAlert, Undo2, Workflow, X,
+  Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Ban, Bell, BellRing, Bold, BookOpen, Building2, Check,
+  ChevronDown, ChevronRight, ChevronUp, CircleCheckBig, CircleDot, CircleDotDashed, ClipboardList, Code,
+  Copy, Cpu, Eye, EyeOff, FileText, FlaskConical, GitBranch, GitCommitHorizontal, GitMerge, Hammer,
+  Heading2, ImagePlus, Inbox, Italic, Key, Layers, LayoutGrid, Link, List, ListOrdered, ListTodo, Loader2,
+  LogOut, Megaphone, MessageSquare, Minus, PackageOpen, Pencil, PlayCircle, Plus, Redo2, RefreshCw, Repeat, Search,
+  Send, Settings2, Table2, TriangleAlert, Undo2, Workflow, X,
 } from 'lucide-react';
 
 /** 全局描边宽度：16px 下比 2 细腻，比 1.5 清晰 */
@@ -46,6 +47,21 @@ const ICON_REGISTRY = {
   'test': FlaskConical,
   'retest': Repeat,
   'edit': Pencil,
+  'preview': Eye,
+  'image': ImagePlus,
+
+  /* — 富文本编辑（RichTextEditor 工具栏 / 快捷命令） — */
+  'bold': Bold,
+  'italic': Italic,
+  'code': Code,
+  'heading': Heading2,
+  'list-bullet': List,
+  'list-ordered': ListOrdered,
+  'link': Link,
+  'undo': Undo2,
+  'redo': Redo2,
+  'refresh': RefreshCw,
+  'minus': Minus,
 
   /* — 角色 — */
   'role-csm': Megaphone,
@@ -56,6 +72,8 @@ const ICON_REGISTRY = {
 
   /* — AI：材质区分而非颜色区分，图标用 Cpu，禁止 Sparkles / 星星 / 机器人 — */
   'ai': Cpu,
+  /* AI 运行中 loading 转圈（配合 .spin 动画） */
+  'loader': Loader2,
 
   /* — 代码感知 — */
   'code-branch': GitBranch,
@@ -65,16 +83,33 @@ const ICON_REGISTRY = {
   /* — 动作与状态 — */
   'check': Check,
   'close': X,
+  'x': X,
   'plus': Plus,
   'search': Search,
+  'send': Send,
+  'play-circle': PlayCircle,
   'back': ArrowLeft,
   'next': ChevronRight,
   'forward': ArrowRight,
   'move-up': ArrowUp,
   'move-down': ArrowDown,
+  'chevron-down': ChevronDown,
+  'chevron-up': ChevronUp,
+  'chevron-right': ChevronRight,
   'return': Undo2,
   'warning': TriangleAlert,
   'empty-box': PackageOpen,
+  'bell': Bell,
+  'bell-ring': BellRing,
+  'copy': Copy,
+  'key': Key,
+
+  /* — 密文可见性（小眼睛切换明文/密文，P0-1 收口） — */
+  'eye': Eye,
+  'eye-off': EyeOff,
+
+  /* — 文档与说明 — */
+  'book-open': BookOpen,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICON_REGISTRY;

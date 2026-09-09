@@ -29,6 +29,13 @@ function mockEvaluate(req, codeCtx) {
   const effortMap = { L1: [0.5, 1], L2: [1, 3], L3: [3, 8], L4: [8, 20] };
   const [mn, mx] = effortMap[level];
   const hasCtx = !!codeCtx?.modules?.length;
+  // P0 改造：mock 只产出 FEASIBLE / NEEDS_ATTENTION。标题含 NEEDS_ATTENTION 时走「有风险但继续走」分支，
+  // 便于端到端验证 NEEDS_ATTENTION 不阻塞流程（真实模型不受此 hook 影响）。
+  const attention = /NEEDS_ATTENTION/i.test(req.title);
+  const verdict = attention ? 'NEEDS_ATTENTION' : 'FEASIBLE';
+  const attention_points = attention
+    ? ['需求边界仍需产品在评审时与 CSM 对齐', '涉及既有数据兼容，需评估历史数据处理', '建议在 PRD 中明确异常场景与验收口径']
+    : [];
   const impact_scope = hasCtx
     ? codeCtx.modules.map((m) => ({
       module: `${m.platform} (${m.module_key}@${m.branch || 'main'})`,
@@ -42,7 +49,7 @@ function mockEvaluate(req, codeCtx) {
     ];
   return {
     rationality: {
-      verdict: 'REASONABLE',
+      verdict,
       reason: hasCtx
         ? `已结合 ${codeCtx.modules.length} 个平台模块的代码快照做可行性分析:需求目标明确,与现有代码能力不冲突,可在既有模块上扩展实现。`
         : '需求目标明确,与现有系统能力不冲突,可按常规迭代实现。',
@@ -50,7 +57,7 @@ function mockEvaluate(req, codeCtx) {
         ? `关联模块 ${codeCtx.modules.map((m) => m.platform).join('、')} 已有相近实现,建议在其上扩展而非新建。`
         : '当前系统已有相近模块可复用,建议在其上扩展而非新建。',
     },
-    clarify_questions: [],
+    attention_points,
     perspectives: {
       customer: `客户核心诉求:${req.title}。需关注交付后的可感知效果与验收口径。`,
       product: '建议在 PRD 中明确主流程、异常流程与边界 case,并与现有功能保持一致性。',

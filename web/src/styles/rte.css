@@ -1,0 +1,125 @@
+/* =====================================================================
+   rte.css — 富文本编辑器（RichTextEditor · .rte-* 命名空间）
+   颜色全部走 design-tokens.css 语义 Token，深色模式自动跟随，无裸 hex。
+   标题阶梯与 pages.css 的 .md-render 对齐（同一篇内容编辑态=预览态）。
+   ===================================================================== */
+
+.rte {
+  position: relative; /* 悬浮菜单 / 弹层定位锚点 */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.rte:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-weak); }
+
+/* ---------- 工具栏 ---------- */
+.rte-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.rte-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-2);
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard);
+}
+.rte-btn:hover { background: var(--primary-weak); color: var(--primary); }
+.rte-btn.active { background: var(--primary-weak); color: var(--primary); }
+.rte-btn:disabled { opacity: .35; cursor: not-allowed; }
+.rte-sep { width: 1px; height: 18px; margin: 0 3px; background: var(--border); }
+
+/* ---------- 编辑区 ---------- */
+.rte-content {
+  min-height: var(--rte-min-h, 80px);
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  outline: none;
+  font-size: var(--text-sm); line-height: 1.7; color: var(--text);
+}
+.rte-content p { margin: 6px 0; }
+.rte-content h1, .rte-content h2, .rte-content h3, .rte-content h4 {
+  letter-spacing: var(--tracking-head); line-height: 1.3; margin: 12px 0 6px;
+}
+.rte-content h1 { font-size: var(--text-xl); font-weight: var(--w-annc); }
+.rte-content h2 { font-size: var(--text-lg); font-weight: var(--w-annc); }
+.rte-content h3 { font-size: var(--text-md); font-weight: var(--w-annc); }
+.rte-content h4 { font-size: var(--text-base); font-weight: var(--w-annc); }
+.rte-content ul, .rte-content ol { margin: 6px 0; padding-left: 22px; }
+.rte-content li { margin: 3px 0; }
+.rte-content code {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 1px 5px;
+}
+.rte-content pre {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px; overflow-x: auto; margin: 8px 0;
+}
+.rte-content pre code { background: none; border: none; padding: 0; }
+.rte-content a { color: var(--primary); text-decoration: underline; }
+.rte-content img {
+  max-width: 100%; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); margin: 6px 0; display: block;
+}
+.rte-content blockquote {
+  border-left: 3px solid var(--border-strong);
+  margin: 8px 0; padding: 2px 12px; color: var(--text-2);
+}
+.rte-content hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.rte-content:focus-visible { outline: none; } /* 焦点环由 .rte:focus-within 承载 */
+
+/* 占位符（空内容时）：data-placeholder 由组件写入 */
+.rte-content.is-empty:before {
+  content: attr(data-placeholder);
+  color: var(--text-3);
+  float: left; height: 0; pointer-events: none;
+}
+
+/* compact（聊天 mini 版）：更小最小高度 */
+.rte-compact .rte-content { min-height: 44px; max-height: 180px; }
+
+/* 聊天输入行：编辑器占满剩余宽度，发送按钮固定在右侧 */
+.chat-input .rte { flex: 1; min-width: 0; }
+
+/* ---------- `/` 快捷命令悬浮菜单 ---------- */
+.rte-slash {
+  position: absolute; z-index: 30;
+  min-width: 200px; max-width: 260px;
+  padding: 4px;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-overlay);
+}
+.rte-slash-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 9px;
+  border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text);
+  text-align: left; font-size: var(--text-sm);
+}
+.rte-slash-item.active { background: var(--primary-weak); color: var(--primary); }
+.rte-slash-ic { display: inline-flex; flex: 0 0 auto; color: var(--text-2); }
+.rte-slash-item.active .rte-slash-ic { color: var(--primary); }
+.rte-slash-label { flex: 1 1 auto; }
+.rte-slash-hint {
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-3); /* R3：弱化文字用 muted，非 --meta */
+  letter-spacing: var(--tracking-small);
+}
+.rte-slash-empty { padding: 8px 10px; font-size: var(--text-xs); color: var(--text-3); }
+
+/* ---------- 聊天气泡内富文本 ---------- */
+.chat-bubble :is(p, ul, ol, h1, h2, h3, h4) { margin: 4px 0; }
+.chat-bubble ul, .chat-bubble ol { padding-left: 20px; }
+.chat-bubble img {
+  max-width: 100%; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); margin: 4px 0; display: block;
+}
+.chat-bubble a { color: var(--primary); text-decoration: underline; }

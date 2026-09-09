@@ -1,0 +1,16 @@
+import { chromium } from 'playwright-core';
+const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: ['--no-proxy-server', '--disable-gpu'] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+page.on('console', (m) => console.log('[console]', m.type(), m.text().slice(0, 200)));
+page.on('pageerror', (e) => console.log('[pageerror]', e.message));
+page.on('requestfailed', (r) => console.log('[reqfail]', r.url(), r.failure()?.errorText));
+await page.goto('http://localhost:5173/', { waitUntil: 'networkidle', timeout: 20000 }).catch((e) => console.log('goto err', e.message));
+await page.waitForTimeout(1500);
+console.log('URL:', page.url());
+console.log('BODY TEXT:', (await page.textContent('body')).slice(0, 300));
+console.log('login-panel count:', await page.locator('.login-panel').count());
+console.log('forms:', await page.locator('form').count());
+console.log('buttons:', await page.locator('button').count());
+await page.screenshot({ path: '/Users/admin/workspace/code/sop-system/web/scripts/shots/debug-login.png' });
+await browser.close();

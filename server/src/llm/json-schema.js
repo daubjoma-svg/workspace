@@ -22,18 +22,22 @@ const PRECHECK = {
 const EVALUATE = {
   type: 'object',
   properties: {
-    level: { type: 'string', enum: ['L1', 'L2', 'L3', 'L4'], description: '改动等级' },
+    level: { type: 'string', enum: ['L1', 'L2', 'L3', 'L4', 'L5'], description: '改动等级' },
     rationality: {
       type: 'object',
       properties: {
-        verdict: { type: 'string', enum: ['OK', 'REASONABLE', 'NEED_CLARIFY'] },
+        // P0 改造：AI 不再向 CSM 提问阻塞流程。FEASIBLE=可直接进入产品评审；NEEDS_ATTENTION=有风险但继续走
+        verdict: { type: 'string', enum: ['FEASIBLE', 'NEEDS_ATTENTION'] },
         reason: { type: 'string' },
         existing_capability: { type: 'string' },
       },
       required: ['verdict', 'reason'],
       additionalProperties: false,
     },
-    clarify_questions: { ...strArray, description: 'verdict 为 NEED_CLARIFY 时必须给出' },
+    attention_points: {
+      ...strArray,
+      description: '给需求提出人的注意事项与需关注的地方，2-5 条，不提问只提示（可选）',
+    },
     effort: {
       type: 'object',
       properties: {
@@ -65,7 +69,7 @@ const EVALUATE = {
       additionalProperties: false,
     },
   },
-  required: ['level', 'rationality', 'clarify_questions', 'effort', 'impact_scope', 'risks', 'suggested_test_focus', 'perspectives'],
+  required: ['level', 'rationality', 'effort', 'impact_scope', 'risks', 'suggested_test_focus', 'perspectives'],
   additionalProperties: false,
 };
 

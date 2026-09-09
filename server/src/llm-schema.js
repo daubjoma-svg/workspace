@@ -27,36 +27,44 @@ const ImpactScopeItem = z.object({
   files: z.array(z.string()).default([]),
   apis: z.array(z.string()).default([]),
   tables: z.array(z.string()).default([]),
+  controllers: z.array(z.object({
+    class: z.string(),
+    methods: z.array(z.string()).default([]),
+  })).default([]),
   confidence: z.number().optional(),
 });
 
 /**
- * EVALUATE：engine.js 消费 level / rationality.verdict / clarify_questions；
+ * EVALUATE：engine.js 消费 level / rationality.verdict / attention_points；
  * 前端 EvaluationView 消费 rationality.reason / effort / perspectives / impact_scope。
- * verdict 必须含 NEED_CLARIFY，否则 AI 澄清闭环永远触发不了。
+ * P0 改造：verdict 只允许 FEASIBLE / NEEDS_ATTENTION，AI 不再向 CSM 提问阻塞流程
+ * （FEASIBLE=可直接进入产品评审；NEEDS_ATTENTION=有风险但继续走，不 raiseClarifies）。
  */
 const EvaluateResult = Meta.extend({
   level: z.enum(['L1', 'L2', 'L3', 'L4']),
   rationality: z.object({
-    verdict: z.enum(['OK', 'REASONABLE', 'NEED_CLARIFY']),
+    verdict: z.enum(['FEASIBLE', 'NEEDS_ATTENTION']),
     reason: z.string().optional(),
     existing_capability: z.string().optional(),
   }),
-  clarify_questions: z.array(z.string()).default([]),
+  // 需求评审专家视角：站在客户/产品角度评估（不是技术评审）
+  perspectives: z.object({
+    customer: z.string().optional(),   // 客户视角：业务价值/对客户的意义
+    product: z.string().optional(),    // 产品视角：是否符合产品方向/优先级
+  }).optional(),
+  attention_points: z.array(z.string()).default([]),
+  // 开发时长评估（核心产出：难度 + 人日）
   effort: z.object({
     min_days: z.number(),
     max_days: z.number(),
     confidence: z.number().optional(),
     basis: z.string().optional(),
-  }).optional(),
-  impact_scope: z.array(ImpactScopeItem).default([]),
-  risks: z.array(z.string()).default([]),
-  suggested_test_focus: z.array(z.string()).default([]),
-  perspectives: z.object({
-    customer: z.string().optional(),
-    product: z.string().optional(),
-    engineering: z.string().optional(),
-  }).optional(),
+  }),
+  // 风险（产品/交付角度：数据缺失、范围不清、依赖外部等）
+  risks: z.array(z.union([
+    z.string(),
+    z.object({ description: z.string().default(''), level: z.string().optional() }),
+  ])).default([]),
 });
 
 /** TEST_CASE：前端 TestCaseView 以 Array.isArray(obj) 为渲染前提，出口必须是数组 */
@@ -115,12 +123,20 @@ function minimalFallback(action, raw) {
     case 'EVALUATE':
       return {
         level: 'L3',
-        rationality: { verdict: 'REASONABLE', reason: text.slice(0, 500) || 'AI 未返回结构化评估，已按中位档兜底，请人工复核。' },
-        clarify_questions: [], impact_scope: [], risks: [], suggested_test_focus: [],
+        rationality: { verdict: 'FEASIBLE', reason: text.slice(0, 500) || 'AI 未返回结构化评估，已按中位档兜底，请人工复核。' },
+        perspectives: {},
+        attention_points: [],
+        effort: { min_days: 3, max_days: 5, confidence: 0, basis: '兜底：AI 未给出开发时长评估' },
+        risks: [],
         _source: 'fallback', _raw: text,
       };
     case 'TEST_CASE':
       return [{ id: 1, type: '正常流', title: 'AI 未返回结构化用例，请人工补充', steps: text.slice(0, 500), expect: '', result: '' }];
+    case 'PRD_GEN':
+    case 'DEV_PROMPT':
+    case 'CUSTOM':
+      // text-shape 兜底：直接返回字符串（不是包成对象），避免前端展示 raw JSON
+      return text || '（AI 未返回内容）';
     default:
       return { text: text || '（AI 未返回内容）', _source: 'fallback' };
   }

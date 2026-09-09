@@ -1,8 +1,14 @@
 # sop-system 设计契约（DESIGN.md）
 
-> 作者：颜好看 (UI/UX Designer) · v1.0.0 · 阶段：Phase 2 锁定产物
+> 作者：颜好看 (UI/UX Designer) · **v1.1.0** · 阶段：Phase 3 迁移缺陷裁决后修订
 > 配套文件：`design-tokens.json`（DTCG，前端 import）· `design-tokens.css`（CSS 落地与兜底）
 > 上游依据：`DIRECTION.md`（调研结论）+ `docs/SPEC-v1.0.md` §8（锁定值）
+>
+> **v1.1.0 变更摘要**（裁决记录见 §9.2.1–9.2.3，全部数值经 WCAG 公式实测，非估计）
+> - 新增四族 `-ink` / `-wash`（决策 1）· 新增 `--scrim` / `--surface-overlay` / `--overlay-ring`（决策 3）
+> - 删除 `--info`，等级改单色序数梯 §4.9.1（决策 2）· `--meta` 降级为非文本专用
+> - 修复 3 处实际未达 AA 的既有色值（浅 `--warn-bg-ink`、深 `--warn-bg`、深 `--meta`）
+> - 新立五条取色铁律 R1–R5（§2.3）
 
 ---
 
@@ -31,65 +37,123 @@
 
 ## 2. Color Palette & Roles
 
+> **v1.1.0 全表对比度实测**。下表所有比值均由 WCAG 2.1 相对亮度公式逐对计算（脚本 `.cache/ship.py`），不是估计值。
+> 文本判定线 4.5:1（AA 正文）；非文本判定线 3:1（1.4.11 UI 组件/图形）。
+
 ### 2.1 浅色（默认）
 
-| Token | 值 | 角色 | 说明 |
+**中性梯**（比值列 = on surface / on bg / on surface-2）
+
+| Token | 值 | 角色 | 实测对比度 | 判定 |
+|---|---|---|---|---|
+| `--bg` | `#F5F7FA` | A1 | — | 冷调纸面（非奶油非米色，避开 warm-neutral 禁区） |
+| `--surface` | `#FFFFFF` | A1 | — | 卡片/容器 |
+| `--surface-2` | `#EEF2F6` | B | — | 表头/内嵌块/hover 底 |
+| `--surface-overlay` | `#FFFFFF` | B | — | **新增** 模态/下拉/popover 面色；浅色下 = surface，抬升靠阴影 |
+| `--fg` | `#101724` | A1 | 17.95 / 16.72 / 15.95 | ✓ 近黑带蓝铸调，非纯黑 |
+| `--fg-2` | `#3C4859` | B | 9.28 / 8.65 / 8.25 | ✓ 正文次级 |
+| `--muted` | `#5D6B7E` | A1 | 5.43 / 5.06 / 4.82 | ✓ **弱化文本唯一合法色**（最差 4.82，含 12px） |
+| `--meta` | `#7A8798` | B | 3.65 / 3.41 / 3.25 | **非文本专用**：过 3:1，全线不过 4.5 → 禁任何字号正文 |
+| `--border` | `#E2E7EE` | A1 | — | 默认边框 |
+| `--border-soft` | `#EFF2F6` | B | — | 内部行分隔 |
+| `--border-strong` | `#CBD3DE` | B | — | 强调分隔/图例/lv-3 边框 |
+| `--brand` | `#1E3A5F` | A1 | 白字 11.50 | ✓ 登录 Hero / 侧栏 logo 底 |
+| `--brand-strong` | `#16293F` | B | 白字 14.76 | ✓ ⚠ 不可用作 scrim 基色（R2） |
+| `--ai-surface` | `#F7F9FB` | C | — | AI「机器纸」冷灰底 |
+| `--ai-ink` | `#3D4654` | C | 9.03 on ai-surface | ✓ AI mono 标签色（石墨） |
+| `--ai-dash` | `#C3CCD8` | C | — | AI 虚线边框色 |
+
+**语义色族**（每族三件套：基色作非文本 / wash 作底 / ink 作字）
+
+| 族 | 基色 | 基色作非文本<br>on surface | `-wash`（12%） | `-ink` | ink on wash<br>surface / bg / surface-2 |
+|---|---|---|---|---|---|
+| accent | `#0E62A8` | 6.30 ✓ | `#0E62A81F` | `#0F4C80` | **7.46 / 6.99 / 6.68** ✓ |
+| success | `#12805C` | 4.92 ✓ | `#12805C1F` | `#11604B` | **6.35 / 5.94 / 5.69** ✓ |
+| warn | `#B45309` | 5.02 ✓ | `#B453091F` | `#834111` | **6.54 / 6.12 / 5.85** ✓ |
+| danger | `#B3261E` | 6.54 ✓ | `#B3261E1F` | `#822220` | **7.85 / 7.34 / 7.02** ✓ |
+
+> 八个派生 Token 完整清单（两态共用同一套 `color-mix` 公式，惰性求值自动跟随 `data-mode`）：
+> `--accent-wash` `--success-wash` `--warn-wash` `--danger-wash` ·
+> `--accent-ink` `--success-ink` `--warn-ink` `--danger-ink`
+>
+> 基色直接当文字放在自家 wash 上的实测值：success **4.19** ✗ · warn **4.26** ✗ · accent 4.44 ✗ · danger 5.44 ✓。
+> 四族里三族不达标 → 这不是 success 一个色的问题，是整族的系统性缺陷，故建 `-ink` 全家桶（决策 1）。
+
+**其他 A2**
+
+| Token | 值 | 实测 | 判定 |
 |---|---|---|---|
-| `--bg` | `#F5F7FA` | A1 | 冷调纸面（非奶油非米色，避开 warm-neutral 禁区） |
-| `--surface` | `#FFFFFF` | A1 | 卡片/容器 |
-| `--surface-2` | `#EEF2F6` | B | 表头/内嵌块/hover 底 |
-| `--fg` | `#101724` | A1 | 近黑带蓝铸调，非纯黑 |
-| `--fg-2` | `#3C4859` | B | 正文次级（≈9:1） |
-| `--muted` | `#5D6B7E` | A1 | 5.05:1 on bg ✓ 12px 元数据安全线 |
-| `--meta` | `#7A8798` | B | 3.40:1 仅图标/分隔/≥16px 弱化文本，禁 12px 正文 |
-| `--border` | `#E2E7EE` | A1 | 默认边框 |
-| `--border-soft` | `#EFF2F6` | B | 内部行分隔 |
-| `--border-strong` | `#CBD3DE` | B | 强调分隔/图例 |
-| `--accent` | `#0E62A8` | A1 | Cyanotype 工程蓝墨，6.30:1 ✓ 每屏 ≤2 处 |
-| `--accent-on` | `#FFFFFF` | A2 | accent 底上的字 |
-| `--accent-hover` | `#0D5897` | A2 | |
-| `--accent-active` | `#0B508A` | A2 | |
-| `--accent-wash` | `#0E62A814` | A2 | 选中底/弱高亮（8% 透明） |
-| `--success` | `#12805C` | A2 | 4.92:1 深松绿 |
-| `--warn` | `#B45309` | A2 | 5.02:1 深琥珀（文字/语义） |
-| `--warn-bg` | `#F59E0B` | A2 | amber-500，**仅作背景填充**，配 `--warn-bg-ink` |
-| `--warn-bg-ink` | `#7C3F00` | A2 | warn-bg 上的文字 |
-| `--danger` | `#B3261E` | A2 | 6.53:1 砖红 |
-| `--brand` | `#1E3A5F` | A1 | 品牌藏青：登录 Hero / 侧栏 logo 底 |
-| `--brand-strong` | `#16293F` | B | |
-| `--ai-surface` | `#F7F9FB` | C | AI「机器纸」冷灰底 |
-| `--ai-ink` | `#3D4654` | C | AI mono 标签色（石墨） |
-| `--ai-dash` | `#C3CCD8` | C | AI 虚线边框色 |
+| `--accent-on` | `#FFFFFF` | 6.30 on accent | ✓ |
+| `--accent-hover` / `--accent-active` | `#0D5897` / `#0B508A` | — | 悬停/按下 |
+| `--warn-bg` | `#F59E0B` | 2.15 on surface | **<3** → 填充块必须补 1px `--warn` 边框（5.02 ✓）满足 1.4.11 |
+| `--warn-bg-ink` | `#5C2E00` | **5.30** on warn-bg | ✓ **v1.1.0 修复**（原 `#7C3F00` 仅 **3.81** ✗，本轮前端未发现） |
+| `--scrim` | `rgba(16,23,36,.55)` | 浮层/遮后底 **4.21** | ✓ 遮后页面 L* 97.2→51.8（ΔL*=45.4）；背景正文 16.72→4.27 退居后景 |
+| `--overlay-ring` | `rgba(16,23,36,.08)` | — | **新增** 浅色仅作物理边缘（浮层自身已 4.21 达标） |
 
 ### 2.2 深色（对等，非反色 — 亮度阶梯法）
 
-| Token | 值 |
-|---|---|
-| `--bg` | `#0E1116` |
-| `--surface` | `#151A21` |
-| `--surface-2` | `#1C222B` |
-| `--surface-3` | `#262E39`（hover/抬升） |
-| `--fg` | `#E9EEF5` |
-| `--fg-2` | `#C3CCD9` |
-| `--muted` | `#8B97A6` |
-| `--meta` | `#626D7B` |
-| `--border` | `rgba(255,255,255,0.07)` |
-| `--border-strong` | `rgba(255,255,255,0.12)` |
-| `--accent` | `#4FA6EE`（7.23:1 ✓） |
-| `--accent-on` | `#06121D` |
-| `--accent-hover` / `--accent-active` | `#4795D6` / `#4188C3` |
-| `--success` / `--warn` / `--danger` | `#35B37E` / `#D9973E` / `#E5645C` |
-| `--warn-bg` / `--warn-bg-ink` | `#B45309` / `#FFF1DC` |
-| `--ai-surface` / `--ai-ink` / `--ai-dash` | `#12171E` / `#9AA6B4` / `rgba(255,255,255,0.14)` |
+**中性梯**（比值列 = on bg / surface / surface-2 / surface-3）
+
+| Token | 值 | 实测对比度 | 判定 |
+|---|---|---|---|
+| `--bg` | `#0E1116` | — | |
+| `--surface` | `#151A21` | — | |
+| `--surface-2` | `#1C222B` | — | |
+| `--surface-3` | `#262E39` | — | hover/抬升（浅色无此层，抬升靠阴影） |
+| `--surface-overlay` | `#262E39` | — | **新增** = surface-3。深色浮层**必须**抬到此层，见决策 3 |
+| `--fg` | `#E9EEF5` | 16.22 / 14.99 / 13.72 / 11.76 | ✓ |
+| `--fg-2` | `#C3CCD9` | 11.67 / 10.79 / 9.87 / 8.46 | ✓ |
+| `--muted` | `#8B97A6` | 6.37 / 5.89 / 5.39 / **4.62** | ✓ surface-3 上裕度仅 0.12 → 禁止再叠更亮的面 |
+| `--meta` | `#737F8D` | 4.64 / 4.29 / 3.92 / **3.36** | 非文本专用 ✓ **v1.1.0 修复**（原 `#626D7B` 在 surface-3 上 **2.61** ✗，连非文本 3:1 都不过） |
+| `--border` / `--border-soft` / `--border-strong` | `rgba(255,255,255,.07/.04/.12)` | — | |
+| `--brand` / `--brand-strong` | `#1E3A5F` / `#0F1F33` | 白字 11.50 / 16.61 | ✓ |
+| `--ai-surface` / `--ai-ink` / `--ai-dash` | `#12171E` / `#9AA6B4` / `rgba(255,255,255,.14)` | — | |
+
+**语义色族**
+
+| 族 | 基色 | 基色作非文本<br>on surface | `-wash`（12%） | `-ink` | ink on wash<br>bg / surface / surface-2 / surface-3 |
+|---|---|---|---|---|---|
+| accent | `#4FA6EE` | 6.68 ✓ | `#4FA6EE1F` | `#7DBCF0` | **7.83 / 7.09 / 6.43 / 5.51** ✓ |
+| success | `#35B37E` | 6.58 ✓ | `#35B37E1F` | `#6BC5A2` | **7.72 / 7.00 / 6.35 / 5.45** ✓ |
+| warn | `#D9973E` | 7.03 ✓ | `#D9973E1F` | `#DEB175` | **8.08 / 7.33 / 6.65 / 5.71** ✓ |
+| danger | `#E5645C` | 5.25 ✓ | `#E5645C1F` | `#E68D8A` | **6.78 / 6.19 / 5.64 / 4.85** ✓ ← 全族最差项 |
+
+> `--accent-wash` 深色原为 8%（`0x14`），v1.1.0 统一为 12%（`0x1F`），与浅色对齐。
+> **ink 配比锁定 70% 而非前端提议的 80%**：80% 时深色 danger 在 surface-3 wash 上只有 **4.14** ✗。70% 是能让 8 个族 × 全部面都过线的下限。
+
+**其他 A2**
+
+| Token | 值 | 实测 | 判定 |
+|---|---|---|---|
+| `--accent-on` | `#06121D` | — | 深色态主按钮反色字 |
+| `--warn-bg` | `#A34A08` | ink **5.33** | ✓ **v1.1.0 修复**（原 `#B45309` 配同字 4.51，裕度 0.01 形同不达标）。自身 on surface 2.95 <3 → 同样需 1px `--warn` 边框 |
+| `--warn-bg-ink` | `#FFF1DC` | 5.33 on warn-bg | ✓ |
+| `--scrim` | `rgba(0,0,0,.60)` | 背景正文 16.22→**3.16** | 已钝化；分离度不由它承担（见下） |
+| `--overlay-ring` | `rgba(255,255,255,.24)` | 对遮后页面 **3.19** | ✓ **新增·强制**。不可复用 `--border-strong`(.12)，那只有 **2.15** ✗ |
 
 ### 2.3 配比铁律与禁用
 
 - **配比**：中性 70–90% / accent 5–10% / 语义 0–5% / 效果色 <1%。
 - **每屏 ≤2 处可见 `--accent`**（多了 = 视觉噪音）。
+
+**五条取色铁律（v1.1.0 新立，与 CSS 文件头一致）**
+
+| # | 铁律 | 违反后果（实测） |
+|---|---|---|
+| **R1** | 语义色作**文字**一律用 `--*-ink`；基色只用于填充/圆点/边框/图标 | success 直用 4.19、warn 4.26、accent 4.44 全部跌破 AA |
+| **R2** | `--scrim` 禁止由任何**随模式翻转**的 Token 派生 | 派生自 `--brand-strong` 时深色分离度 **1.01:1**，遮罩完全不可见 |
+| **R3** | `--meta` 非文本专用；弱化文本一律 `--muted` | meta 全线 3.25–4.29，任何字号正文都不达 4.5 |
+| **R4** | 深色浮层分离靠 `--surface-overlay` 抬升 + `--overlay-ring` 描边，**不靠 scrim** | scrim alpha 从 .50 拉到 1.00，分离度只从 1.46 走到 1.53:1 |
+| **R5** | 填充块底色对 surface <3:1 时必须补 1px 同族基色边框 | `--warn-bg` 浅 2.15 / 深 2.95，均不满足 1.4.11 |
+
+**禁用**
+
 - ❌ 任何 Indigo→Pink / 紫→粉渐变（P0-2）
 - ❌ Tailwind 默认 `#6366F1` / `#2563EB` 作品牌强调
 - ❌ 奶油/米色/沙色背景（OKLCH L 0.84–0.97, C<0.06, hue 40–100）
 - ❌ 用颜色给需求「分类」（业务线/模块/产品线一律中性标签）
+- ❌ **青色 `--info`**（已删除，v1.1.0）——与 `--accent` 同为蓝相邻色，在需求列表里与"选中态"抢读；等级用单色序数梯表达（§4.9）
+- ❌ 组件里出现 `rgba(...)` / `#xxx` 字面量（Token 源文件除外）
 
 ---
 
@@ -189,15 +253,24 @@
 - 生成中：dashed + 骨架段逐段浮现（非打字机）。
 - 失败/超时：dashed + `--danger` + 具体错误 + 重试 + 降级（换模型/手动填）。
 - 元信息：mono 小字 模型名/耗时/Token/成本。
-- **禁止**：AI 节点用紫/渐变/发光/毛玻璃/✨🤖 任何 emoji。
+- **禁止**：AI 节点用紫/渐变/发光/毛玻璃/任何 emoji（尤其是 sparkles、robot 两个 AI 套路符号）。
 - 状态矩阵：Populated（确认/未确认）/ Loading（骨架段）/ Empty（无 AI 产物，显"本节点暂无 AI 产出"）/ Error（失败条+重试+降级）/ Edge（超长产物文内滚动 + 代码块 mono 渲染 + "复制"按钮供研发粘进 Cursor）。
 
 ### 4.7 Modal（模态 — 提单/确认）
-- `width: 600px; max-width: 92vw; max-height: 88vh; overflow:auto`；`--radius-lg`；`box-shadow: var(--elev-overlay)`。
-- mask：`rgba(16,23,36,.5)` + `backdrop-filter: blur(4px)`；`--motion-slow` 淡入。
+- `width: 600px; max-width: 92vw; max-height: 88vh; overflow:auto`；`--radius-lg`。
+- **面色必须用 `var(--surface-overlay)`，不是 `var(--surface)`**（浅色两者同值；深色 surface-overlay 抬到 `#262E39`）。
+- **描边必须**：`box-shadow: var(--elev-overlay), 0 0 0 1px var(--overlay-ring)`。
+- mask：`background: var(--scrim)` + `backdrop-filter: blur(4px)`；`--motion-slow` 淡入。**禁止写死 `rgba(16,23,36,.5)`。**
 - 头 `padding:16px 20px` + 底 1px 分隔；体 `20px`；脚 `14px 20px` + `--surface-2` 底 + 右对齐操作（主按钮 ≤1）。
 - 关闭：右上 `X` 20px + `Esc` + 点遮罩；聚焦陷阱（a11y）。
 - 状态矩阵：Populated/Loading（提交中禁用按钮+Spinner）/ Empty（罕见）/ Error（脚注红字 + 重试）/ Success（关闭+Toast）。
+
+> **为什么深色浮层要"面色抬升 + 描边"双保险**（决策 3 实测）
+> 深色 `--bg` 本身已近黑（L*=5.0），遮罩再黑也压不出分母。实测 scrim alpha 从 0.50 拉到 1.00，
+> 浮层与遮后页面的对比比只从 **1.46 → 1.53:1**，永远够不到 1.4.11 的 3:1。
+> 靠亮度硬达标需要把浮层提到 L*≈38.9（约 `#5A626C`）——那已经不是深色模态了。
+> 所以：① 面色抬到 surface-3（ΔL* 由 7.2 → **15.8**，人眼层次成立）；
+> ② 加 1px `--overlay-ring`（rgba(255,255,255,.24)，对遮后页面 **3.19:1** ✓，把合规交给描边）。
 
 ### 4.8 Toast（轻提示）
 - `position: fixed; top:22px; left:50%; translateX(-50%)`；`bg: var(--fg); color: var(--bg)`（反色，强可读）；`--radius-sm`；`--motion-base` 下落。
@@ -206,11 +279,27 @@
 - 状态矩阵：Populated（显文案+类型点）/ Loading（转圈+文案）/ Empty（不渲染）/ Error（红点+原因）/ Success（绿点+确认）。
 
 ### 4.9 Badge（徽章 / 状态点 / 等级）
-- **语义徽章**（仅 3 色）：success/warn/danger 用「底色 12% + 该色字」，不纯色块。
-- **等级 L1–L4**：字重 510/590 区分 + 1px 边框，禁彩色（P0 禁侧条纹）；P0/阻塞/失败 三种允许 `--danger` 语义色。
-- **状态点**：7px 圆；ok=`--success`，current=`--accent`+3px 环，pending=`--border-strong`。
+- **语义徽章**（仅 3 色）：底 `var(--*-wash)`（12%）+ 字 **`var(--*-ink)`**，不纯色块。
+  ⚠ 字**必须**是 `-ink` 不是基色——基色放自家 wash 上实测 success 4.19 / warn 4.26 全部跌破 AA（R1）。
+- **状态点**：7px 圆；ok=`--success`，current=`--accent`+3px 环，pending=`--border-strong`。圆点属非文本，用基色即可（≥3:1 已验）。
 - **Pill**：`--radius-pill`，中性底 `--surface-2` + `--fg-2` 字（模块 chip、单号标签）。
-- 状态矩阵：Populated/Empty（不渲染）/ Error（红边）/ Disabled（`--meta` 灰）/ Edge（超长文本截断+tooltip）。
+- 状态矩阵：Populated/Empty（不渲染）/ Error（红边）/ Disabled（`--meta` 灰，1.4.3 豁免）/ Edge（超长文本截断+tooltip）。
+
+#### 4.9.1 等级梯 `.lv-1 … .lv-4`（单色序数梯 — 替代已删除的 `--info`）
+
+等级是**有序量**，不是**分类量**。彩虹色阶（绿/蓝/橙/红）把"顺序"编码成"色相"，读者必须先记住图例才能解码；
+而单色序数梯把顺序编码成**亮度 + 字重 + 填充实度**三条冗余通道，不看图例也能一眼排序，且天然满足 1.4.1（不仅靠颜色传达）。
+
+| 等级 | 填充 | 文字 | 边框 | 字重 | 语义 | 实测（浅 / 深） |
+|---|---|---|---|---|---|---|
+| `.lv-1` | `var(--fg)` 实心 | `var(--bg)` | 无 | 590 | 最高/最重 | 16.72 / 16.22 ✓ |
+| `.lv-2` | `var(--surface-2)` | `var(--fg)` | 无 | 590 | 高 | 15.95 / 13.72 ✓ |
+| `.lv-3` | 透明 | `var(--fg-2)` | 1px `--border-strong` | 510 | 中 | 9.28 / 10.79 ✓ |
+| `.lv-4` | 透明 | `var(--muted)` | 1px `--border-soft` | 400 | 低 | 5.43 / 5.89 ✓ |
+
+- 共用：`--radius-sm`、`padding: 2px 8px`、`--text-xs`、`--tracking-small`。
+- 例外：**P0 / 阻塞 / 失败**三种仍允许 `--danger-wash` + `--danger-ink`——它们是"告警"不是"等级"。
+- ❌ 禁止给 `.lv-*` 上任何色相（含 `--info`、青、紫）；❌ 禁止 `border-left > 1px` 侧条纹（绝对禁令 #1）。
 
 ---
 
@@ -280,7 +369,12 @@
   ```
   显示「0 个模块」徽章；不阻塞提交（F7）。
 
-- **a11y（优先级 1）**：对比度正文 ≥4.5:1（已实测全部达标）；图标按钮 `aria-label`；装饰图标 `aria-hidden`；键盘可达；focus 可见；`prefers-reduced-motion` 降级；`lang` 属性；表单 label 关联。
+- **a11y（优先级 1）**：图标按钮 `aria-label`；装饰图标 `aria-hidden`；键盘可达；focus 可见；`prefers-reduced-motion` 降级；`lang` 属性；表单 label 关联。
+- **对比度**：v1.1.0 已对**两态 × 全部面 × 全部前景**逐对实测（见 §2.1/2.2 表）。当前全量通过：
+  - 文本 ≥4.5:1 —— 最紧的三项：深色 `--muted` on `--surface-3` **4.62**、深色 `--danger-ink` on wash@surface-3 **4.85**、浅色 `--muted` on `--surface-2` **4.82**。**这三项禁止再叠加任何新面层或降低字色亮度。**
+  - 非文本 ≥3:1 —— 最紧：深色 `--meta` on `--surface-3` **3.36**、深色 `--overlay-ring` 对遮后页面 **3.19**。
+  - 已知豁免：`--warn-bg` 填充块自身 2.15/2.95 —— 按 R5 补 1px `--warn` 边框达标；禁用态用 `--meta` —— WCAG 1.4.3 豁免。
+- **复算脚本**：`.cache/ship.py`（改任何颜色 Token 后必须重跑，全绿方可提交）。
 
 ---
 
@@ -289,32 +383,101 @@
 ### 9.1 主题切换机制
 - 根元素挂 `data-mode="dark"` 即深色；默认浅色。与现有 `html[data-mode="dark"]` 选择器**完全一致**，无需改 JS 切换逻辑。
 - 推荐：`import tokens from './design-tokens.json'`，运行时按 `data-mode` 选 `theme.light` / `theme.dark` 合并 `base` 注入 CSS 变量；或**直接 @import `design-tokens.css`**（已含 :root + [data-mode="dark"]，零额外工作）。
+- **自定义主色与 Token 主色必须可区分**：`applyTheme` 只在用户选了**非 Token 默认值**时写 inline `--accent`；
+  若存储值恰好等于任一模式的 Token 默认色，必须**移除** inline 覆盖，否则浅色的 `#0E62A8` 会被带进深色，
+  深色主色 `#4FA6EE` 永远不生效（该缺陷已由前端修复，设计侧确认此行为为**正确且必须保留**的契约）。
 
-### 9.2 遗留 styles.css → 新 Token 迁移映射（Phase 3 整改清单）
-现有代码用旧名，需全量 find-replace：
+### 9.2 遗留 styles.css → 新 Token 迁移映射（Phase 3 整改清单 · v1.1.0 裁决后修订）
+
+现有代码用旧名，需全量 find-replace。**加粗行为本次裁决后与 v1.0 不同的条目。**
 
 | 旧名（styles.css） | 新名（design-tokens.css） | 备注 |
 |---|---|---|
 | `--primary` `#2563eb` | `--accent` `#0E62A8` | **值也改**（去 Tailwind 默认蓝） |
-| `--primary-weak` | `--accent-wash` | |
-| `--primary-strong` | `--accent-hover` | |
-| `--primary-weaker` | 用 `--accent-wash`（或 `--surface-2`） | |
-| `--accent` `#16a34a` | `--success` | 旧"强调绿"实为语义绿，归 success |
-| `--accent-weak` | `--success` 12% 底（临时用 `color-mix`） | 见下方 |
+| **`--primary-weak`** | **保留 `--primary-weak`，改为 `color-mix(in srgb, var(--primary) 12%, transparent)`** | **偏差 1 采纳**：主题色是运行时可换的，必须跟随 `--primary` 而非静态 `--accent-wash`。浓度对齐 12% |
+| **`--primary-strong`** | **保留 `--primary-strong`，改为 `color-mix(in srgb, var(--primary) 88%, black)`** | 同上。88% ≈ `--accent-hover` 的 90%，取整到 88% 与 wash 的 12% 互补 |
+| `--primary-weaker` | `--surface-2` | 只用于中性底，不参与主题色 |
+| `--accent` `#16a34a` | `--success` | 旧"强调绿"实为语义绿，归 success。**不保留 `--accent` 别名**（偏差 2 采纳） |
+| **`--accent-weak`** | **`--success-wash`** | **偏差 2 采纳**：删临时 `color-mix`，用正式 Token |
 | `--panel` | `--surface` | |
 | `--panel-2` | `--surface-2` | |
 | `--bg-tint` | `--surface-2` / `--border-soft` | 按场景 |
 | `--text` | `--fg` | |
 | `--text-2` | `--fg-2` | |
-| `--text-3` | `--meta` | 注意：`--meta` 禁 12px 正文，旧代码 11–12px 弱化文本需升到 `--muted` |
-| `--good` | `--success` | |
-| `--warn` `#d97706` | `--warn` `#B45309` | 值改 |
-| `--bad` | `--danger` | |
-| `--info` `#0891b2` | 删除（青色不在新板） | 旧 `.tag-cyan`/`.node-kind.ai` 渐变删除 |
-| `--brand` `#1e3a5f` | `--brand` `#1E3A5F` | 值已一致，保留 |
+| **`--text-3`** | **`--muted`（不是 `--meta`）** | **偏差 3 采纳**：旧 `--text-3` 承载 11–13px 弱化正文，`--meta` 全线 <4.5 会整片挂科。`--muted` 最差 4.82 ✓ |
+| `--good` | `--success` | 作**文字**时用 `--success-ink` |
+| **`--good-ink`（前端临时）** | **`--success-ink`** | **决策 1 修订**：命名统一为族名 + `-ink`；配比 80% → **70%** |
+| `--warn` `#d97706` | `--warn` `#B45309` | 值改；作**文字**时用 `--warn-ink` |
+| `--bad` | `--danger` | 作**文字**时用 `--danger-ink` |
+| **`--info` `#0891b2`** | **删除。`.lv-3` / `.tag-cyan` 改用 §4.9.1 单色序数梯** | **决策 2 驳回前端的 `--info: var(--accent)` 别名** |
+| **`.modal-mask` 的 `rgba(15,23,42,.5)`** | **`var(--scrim)`** | **决策 3 修订**：数值 55% 采纳，派生公式驳回，改双态字面量 |
+| `--brand` `#1e3a5f` | `--brand` `#1E3A5F` | 值已一致，保留。⚠ `--brand-strong` 禁作 scrim 基色 |
 | `--radius`(12) / `--radius-sm`(8) / `--radius-lg`(16) | `--radius-md`(12) / `--radius-sm`(6) / `--radius-lg`(16) | 小圆角 8→6 |
-| `--shadow` / `--shadow-sm` / `--shadow-lg` | `--elev-raised` / `--elev-ring` / `--elev-overlay` | |
+| **`--shadow-sm`** | **`--elev-flat`** | **偏差 4 采纳**：§6"优先 shadow-as-border"下，小阴影的活由 `--elev-ring` 或实体边框接管，`--shadow-sm` 场景应归零 |
+| `--shadow` / `--shadow-lg` | `--elev-raised` / `--elev-overlay` | |
 | `--dur`(200ms) / `--ease` | `--motion-base` / `--ease-standard` | |
+
+#### 9.2.1 三项决策裁决
+
+**决策 1 — `--good-ink` ⟶ 采纳缺陷，驳回命名与配比（modified）**
+
+| 维度 | 前端方案 | 裁决 | 理由 |
+|---|---|---|---|
+| 缺陷是否成立 | success 在 12% wash 上 4.20–4.37 | ✅ **成立**，实测 **4.19:1** | 确认为真缺陷 |
+| 缺陷范围 | 仅 success | ❌ **低估**。warn **4.26** ✗、accent **4.44** ✗、深色 danger **4.43** ✗ | 四族里三族不达标 → 系统性问题，不能单点补丁 |
+| 命名 | `--good-ink` | ❌ 改为 **`--success-ink`** | `--good` 是**待淘汰的旧名**，新 Token 不得继承旧词表；`-ink` 后缀保留（比 `--on-success-wash` 短且成族） |
+| 是否需要 warn/danger 对称 | 未提 | ✅ **需要，且要四族全建** | 建 `--accent-ink` / `--success-ink` / `--warn-ink` / `--danger-ink` |
+| 配比 | `80%` base + `20%` fg | ❌ 改为 **`70%` + `30%`** | 80% 时深色 danger 在 surface-3 wash 上仅 **4.14** ✗。70% 是让 8 族 × 全部面都过线的下限 |
+| 公式形态 | `color-mix(… var(--fg))` | ✅ **保留** | 引用 `--fg` 使其随模式惰性求值，一份公式两态通吃，避免双写漂移 |
+
+**决策 2 — `.lv-3` 青→蓝 ⟶ 驳回（rejected）**
+
+- `--info: var(--accent)` 会让"等级 3"与"品牌强调/选中态"变成同一个颜色。
+  需求列表里 `.lv-3` 和行选中态高频同屏，用户无法区分"这行被选中了"还是"这行是 3 级"——**语义塌缩**。
+- 且违反 §2.3「每屏 ≤2 处可见 accent」：一列 20 行里有 8 行 lv-3，accent 出现 8 次。
+- **替代方案见 §4.9.1 单色序数梯**：等级是有序量，用亮度 + 字重 + 填充实度三条冗余通道编码，
+  不占用任何色相，天然满足 1.4.1，且四级实测 16.72 / 15.95 / 9.28 / 5.43（浅）全部达标。
+- `--info` 从 Token 表**彻底删除**，不留别名——留别名等于留复活入口。
+
+**决策 3 — `--scrim` ⟶ 采纳数值，驳回派生（modified）**
+
+| 维度 | 前端方案 | 裁决 | 实测依据 |
+|---|---|---|---|
+| 是否该建 Token | 建 `--scrim` | ✅ **采纳** | `.modal-mask` 硬编码 `rgba(15,23,42,.5)` 违反"禁硬编码" |
+| 55% 是否合适 | 55% | ✅ **浅色采纳** | 0.55 → 浮层/遮后底 **4.21:1** ✓；0.45 只有 **3.12:1** 裕度不足 |
+| 派生自 `--brand-strong` | `color-mix(… brand-strong 55%, transparent)` | ❌ **驳回** | 深色 `--brand-strong`(#0F1F33, L\*11.9) 与 `--bg`(#0E1116, L\*5.0) 近乎等亮，遮罩分离度 **1.01:1 —— 遮罩完全不可见** |
+| 深色是否要不同不透明度 | 未提 | ✅ **要，且光调不透明度不够** | 见下 |
+
+> **深色遮罩的物理上限**（这是本次审阅最重要的发现）
+> alpha 0.50→1.00，浮层与遮后页面的对比比只从 **1.46 → 1.53:1**。分母（近黑背景）已经压不动了。
+> 要靠亮度达 3:1 需把浮层提到 L\*≈38.9（`#5A626C`）——不再是深色模态。
+> **结论：深色遮罩的分离度不该由 scrim 承担。** 三件套缺一不可：
+> ① `--scrim: rgba(0,0,0,.60)` 中性纯黑字面量（背景正文 16.22→3.16 钝化）
+> ② `--surface-overlay: #262E39` 面色抬升（ΔL\* 7.2 → **15.8**）
+> ③ `--overlay-ring: rgba(255,255,255,.24)` 1px 描边（对遮后页面 **3.19:1** ✓ 拿下 1.4.11）
+> 浅色不需要 ②③（白浮层自身已 4.21），但仍定义同名 Token 保持两态 API 一致。
+
+#### 9.2.2 四项偏差裁决
+
+| # | 前端偏差 | 裁决 | 理由 |
+|---|---|---|---|
+| 1 | `--primary-weak/strong` 由 `--primary` 派生，而非映射到 `--accent-wash/hover` | ✅ **采纳** | 主题色是**运行时可变**的用户设置，`--accent-*` 是**设计期固定**的品牌色。二者生命周期不同，不该合并。唯一要求：浓度对齐 12%，避免出现第五种 wash 浓度 |
+| 2 | 旧 `--accent`（绿）不留别名，全部改 `--success` | ✅ **采纳** | 别名 = 技术债的复活入口。且"accent 是绿色"这个旧心智必须一次性切断，否则新人会以为品牌色是绿的 |
+| 3 | `--text-3` 统一 → `--muted`（非 `--meta`） | ✅ **采纳** | `--meta` 浅色最好也只有 3.65，扛不住任何正文。**`--meta` 仍保留**但角色降级为「非文本专用」（图标/分隔/禁用态），不是删除——图标和分隔线确实需要一档比 muted 更弱的灰，删了会逼出硬编码 |
+| 4 | `--shadow-sm` → `--elev-flat`（非 `--elev-ring`） | ✅ **采纳** | §6 已定"优先 shadow-as-border"。旧 `--shadow-sm` 多用在已有 1px 边框的元素上，再叠环就是"幽灵卡片"（禁令 #9）。归零正确 |
+
+#### 9.2.3 深色态复核发现（前端未报告的 4 项）
+
+| # | 问题 | 实测 | 处置 |
+|---|---|---|---|
+| 1 | `--meta` `#626D7B` 在 `--surface-3` 上 | **2.61:1** — 连非文本 3:1 都不过 | 提亮至 `#737F8D`（最差 3.36 ✓） |
+| 2 | 深色 `--warn-bg` `#B45309` 配 `#FFF1DC` | **4.51:1** — 裕度 0.01，任何抗锯齿/子像素渲染都会掉下去 | 压深至 `#A34A08`（**5.33** ✓） |
+| 3 | 浅色 `--warn-bg-ink` `#7C3F00` 配 `#F59E0B` | **3.81:1** ✗ 未达 AA（这是浅色态遗漏，一并修） | 改 `#5C2E00`（**5.30** ✓） |
+| 4 | 深色 `--accent-wash` 为 8%，浅色为 12% | 不一致 | 统一 12% |
+
+另记两项**非 Token 层**违规（属前端代码，需前端自行整改）：
+- 半像素字号 `12.5 / 13.5 / 11.5 / 14.5px` 仍在 `base.css` 中残留 → 收敛到 8 级阶梯（§9.2 整改项 7）
+- 字重仍用 `400/500/600/700/800` 五档 → 收敛到 `400/510/590` 三档（§3）
 
 **具体整改项（对应 DIRECTION.md §10 的 8 项红线）**：
 1. emoji→Lucide（P0-1，30+ 处，前端已启动）
@@ -336,12 +499,12 @@
 | 看板视图 | `LayoutGrid` | 20 | 视图切换 |
 | 列表视图 | `Table2` | 20 | 视图切换 |
 | 流程/编排 | `Workflow` | 20 | SOP 编排页 |
-| **AI 节点** | `Cpu` | 16/20 | **禁用 Sparkles/✨（AI 套路星星）** |
+| **AI 节点** | `Cpu` | 16/20 | **禁用 `Sparkles` 图标与 sparkles emoji（AI 套路星星）** |
 | 代码分支 | `GitBranch` | 16 | 代码影响面 |
 | 提交 | `GitCommitHorizontal` | 16 | 关联提交 |
 | 合并 | `GitMerge` | 16 | MR 合并 |
 | 测试 | `FlaskConical` | 20 | 测试用例 |
-| **上线** | `CircleCheckBig` | 20 | **禁用 Rocket/🚀** |
+| **上线** | `CircleCheckBig` | 20 | **禁用 `Rocket` 图标与 rocket emoji** |
 | 客户/CSM | `Building2` | 20 | 提单 |
 | 搜索 | `Search` | 20 | 全局搜索 |
 | 设置 | `Settings2` | 20 | 管理后台 |

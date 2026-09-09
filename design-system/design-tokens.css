@@ -1,6 +1,6 @@
 /* =====================================================================
    sop-system 设计 Token — Blueprint Calm（蓝图冷静）
-   作者：颜好看 (UI/UX Designer) · v1.0.0
+   作者：颜好看 (UI/UX Designer) · v1.1.0
    规范：DTCG + 四层 Token 架构（A1-identity / A2 / B-slot / C-extension）
    配对：design-tokens.json（同源，前端优先 import json，此处作 CSS 落地与兜底）
 
@@ -8,7 +8,29 @@
    - 主题切换：根元素 data-mode="dark" → 深色覆盖；默认（无属性/light）为浅色。
    - 布局/字号/圆角/间距/动效 等中性 Token 在 :root 统一定义，深浅共用。
    - 颜色分 :root（浅）与 [data-mode="dark"]（深）两段。
-   - 所有颜色经 WCAG 2.1 实测：accent 6.30:1 / 深色 7.23:1 / success 4.92 / warn 5.02 / danger 6.53 / muted 5.05。
+
+   ── v1.1.0 变更（Phase 3 迁移暴露的缺陷修复，全部经对比度实测）──
+   新增：--{accent|success|warn|danger}-ink   语义色在同色 wash 底上的合规文字色
+         --{accent|success|warn|danger}-wash  统一 12% 浓度（消除 10/12/14/16 并存）
+         --scrim（双态字面量）· --surface-overlay（浮层面，深色需抬升）
+         --overlay-ring（深色浮层强制描边，浅色仅作边缘）
+   修复：--warn-bg-ink 浅色 3.81:1 未达 AA → #5C2E00 (5.30:1)
+         --warn-bg 深色裕度仅 0.01 → 底色压深至 #A34A08 (5.33:1)
+         --meta 深色在 surface-3 上 2.61:1 未达非文本 3:1 → #737F8D (最差 3.36:1)
+   统一：--accent-wash 深色 8% → 12%，与浅色一致
+   删除：--info（青色；见 DESIGN.md §9.2 决策 2），改用单色序数梯 .lv-1..4
+   降级：--meta 改为「非文本专用」，禁止承载任何字号的正文（详见 DESIGN.md §2.4）
+
+   ── 五条不可违反的取色铁律 ──
+   R1 语义色作【文字】一律用 --*-ink；基色 --success/--warn/--danger/--accent
+      只用于填充、圆点、边框、图标（非文本 ≥3:1）。
+   R2 --scrim 禁止由任何随模式翻转的 Token 派生（--brand-strong / --fg 等）。
+      深色下这类派生会得到与背景等亮的遮罩，分离度仅 1.01:1，遮罩完全失效。
+   R3 --meta 非文本专用（图标/分隔/禁用态）；弱化文本一律 --muted。
+   R4 深色浮层分离度不靠 --scrim（物理上限 ~1.5:1），
+      靠 --surface-overlay 抬升 + 1px --overlay-ring 描边。
+   R5 填充块底色（--warn-bg）自身对 --surface <3:1，
+      必须补 1px 同族基色（--warn）边框以满足 WCAG 1.4.11。
    ===================================================================== */
 
 :root {
@@ -64,6 +86,9 @@
   --motion-base:    180ms;
   --motion-slow:    240ms;
   --ease-standard:  cubic-bezier(0.2, 0, 0, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ---------- 层级（base.shadow，浅色基准） ---------- */
   --elev-flat:  none;
@@ -85,10 +110,12 @@
   --bg:           #F5F7FA;
   --surface:      #FFFFFF;
   --surface-2:    #EEF2F6;
+  /* --surface-3 为深色专属：浅色抬升靠阴影，深色抬升靠亮度阶梯（见 DESIGN.md §6） */
+  --surface-overlay: #FFFFFF;   /* 模态/下拉/popover 的面色 */
   --fg:           #101724;
   --fg-2:         #3C4859;
   --muted:        #5D6B7E;
-  --meta:         #7A8798;
+  --meta:         #7A8798;      /* 非文本专用 3.25–3.65:1，禁作任何正文 */
   --border:       #E2E7EE;
   --border-soft:  #EFF2F6;
   --border-strong:#CBD3DE;
@@ -97,21 +124,47 @@
   --accent-on:     #FFFFFF;
   --accent-hover:  #0D5897;
   --accent-active: #0B508A;
-  --accent-wash:   #0E62A814;
 
   --success: #12805C;
   --warn:    #B45309;
   --warn-bg: #F59E0B;
-  --warn-bg-ink: #7C3F00;
+  --warn-bg-ink: #5C2E00;       /* v1.1.0 修复：原 #7C3F00 仅 3.81:1 未达 AA */
   --danger:  #B3261E;
 
   --brand:        #1E3A5F;
   --brand-strong: #16293F;
 
+  /* 遮罩：双态字面量，禁止派生（见文件头 R2）
+     0.55 → 遮后页面 L* 97.2→51.8；白色浮层与遮后底 4.21:1 ✓（0.45 时仅 3.12:1，裕度不足） */
+  --scrim: rgba(16, 23, 36, 0.55);
+  --overlay-ring: rgba(16, 23, 36, 0.08);   /* 浅色浮层自身已 4.21:1 达标，此环仅作物理边缘 */
+
   /* C-extension：AI 材质（非颜色区分） */
   --ai-surface: #F7F9FB;
   --ai-ink:     #3D4654;
   --ai-dash:    #C3CCD8;
+}
+
+/* ==================== 语义色派生（wash / ink）— 深浅共用公式 ====================
+   公式对两态同时成立，因为它们引用的 --accent/--success/--warn/--danger/--fg
+   本身随 data-mode 切换，color-mix 惰性求值自动跟随。
+
+   wash = 基色 12%   → 徽章/标签/选中态的底
+   ink  = 基色 70% + 当前模式 --fg 30%
+          浅色朝 #101724 加深、深色朝 #E9EEF5 提亮，保证在 wash 底上 ≥4.5:1。
+          70% 是实测下限：80% 时深色 danger 仅 4.14:1 不达标。
+   ================================================================================ */
+:root,
+[data-mode="dark"] {
+  --accent-wash:  color-mix(in srgb, var(--accent)  12%, transparent);
+  --success-wash: color-mix(in srgb, var(--success) 12%, transparent);
+  --warn-wash:    color-mix(in srgb, var(--warn)    12%, transparent);
+  --danger-wash:  color-mix(in srgb, var(--danger)  12%, transparent);
+
+  --accent-ink:   color-mix(in srgb, var(--accent)  70%, var(--fg));
+  --success-ink:  color-mix(in srgb, var(--success) 70%, var(--fg));
+  --warn-ink:     color-mix(in srgb, var(--warn)    70%, var(--fg));
+  --danger-ink:   color-mix(in srgb, var(--danger)  70%, var(--fg));
 }
 
 /* ==================== 颜色：深色（对等，非反色） ==================== */
@@ -120,10 +173,13 @@
   --surface:      #151A21;
   --surface-2:    #1C222B;
   --surface-3:    #262E39;
+  /* 浮层面必须抬到 surface-3：深色下遮罩再暗也压不出层次
+     （模态面用 --surface 时 ΔL* 仅 7.2 → 不足；用 surface-3 为 15.8 → 强分层） */
+  --surface-overlay: #262E39;
   --fg:           #E9EEF5;
   --fg-2:         #C3CCD9;
   --muted:        #8B97A6;
-  --meta:         #626D7B;
+  --meta:         #737F8D;      /* v1.1.0 提亮：原 #626D7B 在 surface-3 上仅 2.61:1 */
   --border:       rgba(255, 255, 255, 0.07);
   --border-soft:  rgba(255, 255, 255, 0.04);
   --border-strong:rgba(255, 255, 255, 0.12);
@@ -132,16 +188,24 @@
   --accent-on:     #06121D;
   --accent-hover:  #4795D6;
   --accent-active: #4188C3;
-  --accent-wash:   #4FA6EE14;
 
   --success: #35B37E;
   --warn:    #D9973E;
-  --warn-bg: #B45309;
+  --warn-bg: #A34A08;           /* v1.1.0 压深：原 #B45309 配 ink 仅 4.51:1，裕度 0.01 */
   --warn-bg-ink: #FFF1DC;
   --danger:  #E5645C;
 
   --brand:        #1E3A5F;
   --brand-strong: #0F1F33;
+
+  /* 深色遮罩用中性纯黑而非藏青：--brand-strong(#0F1F33) 与 --bg(#0E1116) 近乎等亮，
+     任何不透明度下分离度都只有 1.01:1，遮罩形同虚设。60% 把背景正文由 16.22:1 压到 3.16:1。
+     ⚠ 深色遮罩存在物理上限：alpha 从 0.50 拉到 1.00，浮层/遮后页面只从 1.46 走到 1.53:1，
+       靠亮度永远够不到 1.4.11 的 3:1（需浮层亮到 L*38.9≈#5A626C，深色模态不可接受）。
+       故分离由 --surface-overlay 抬升（ΔL*=15.8）+ --overlay-ring 描边（3.19:1）承担。 */
+  --scrim: rgba(0, 0, 0, 0.60);
+  --overlay-ring: rgba(255, 255, 255, 0.24);  /* 深色浮层【强制】1px 描边；
+     不可复用 --border-strong(0.12)，那对遮后页面只有 2.15:1 达不到 3:1 */
 
   --ai-surface: #12171E;
   --ai-ink:     #9AA6B4;

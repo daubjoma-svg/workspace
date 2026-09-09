@@ -42,13 +42,15 @@ function migrateGitlabToken() {
   return 1;
 }
 
+// 口令迁移：bcrypt 哈希（不可逆，保留）与可逆密文（新格式）都跳过；
+// 只剩历史明文需要处理，转可逆加密（与新写入口径一致）
 function migrateUserPasswords() {
   const rows = db.prepare('SELECT id,username,password FROM users').all();
   const upd = db.prepare('UPDATE users SET password=? WHERE id=?');
   let n = 0;
   for (const u of rows) {
-    if (password.isHashed(u.password)) continue;
-    upd.run(password.hash(u.password), u.id);
+    if (password.isHashed(u.password) || secret.isEncrypted(u.password)) continue;
+    upd.run(password.store(u.password), u.id);
     n += 1;
   }
   return n;

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { api, SopNode, AI_ACTIONS, ROLE_NAME } from '../../api';
 import { useApp } from '../../App';
 import { Icon } from '../../components/Icon';
+import { SearchSelect } from '../../components/SearchSelect';
+import { ConfirmModal } from '../../components/ConfirmModal';
 
 export default function Sop() {
   const { toast } = useApp();
@@ -10,6 +12,8 @@ export default function Sop() {
   const [nodes, setNodes] = useState<Partial<SopNode>[]>([]);
   const [dirty, setDirty] = useState(false);
   const [editIdx, setEditIdx] = useState<number | null>(null);
+  /** 统一弹窗状态：null=关闭；{type:'new'|'rename',id} 打开输入弹窗；{type:'delete',id} 删除确认 */
+  const [dlg, setDlg] = useState<{ type: 'new' | 'rename' | 'delete'; id?: number; name?: string } | null>(null);
 
   const load = async () => {
     const t = await api.get('/api/admin/sop-templates');
@@ -44,11 +48,7 @@ export default function Sop() {
     await api.put(`/api/admin/sop-templates/${cur}/nodes`, { nodes });
     toast('SOP 已保存'); load();
   };
-  const addTpl = async () => {
-    const name = prompt('新模板名称');
-    if (!name) return;
-    await api.post('/api/admin/sop-templates', { name }); setCur(null); load();
-  };
+  const addTpl = () => setDlg({ type: 'new' });
   const setDefault = async (id: number) => { await api.put(`/api/admin/sop-templates/${id}`, { is_default: true }); load(); toast('已设为默认'); };
 
   const tpl = tpls.find((t) => t.id === cur);
@@ -72,11 +72,37 @@ export default function Sop() {
         {tpls.map((t) => (
           <div key={t.id} className="card tpl-card" style={{ borderColor: t.id === cur ? 'var(--primary)' : undefined }}
             onClick={() => setCur(t.id)}>
-            <div style={{ fontWeight: 600 }}>{t.name}</div>
+            <div className="row" style={{ alignItems: 'center' }}>
+              <div style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+              <button className="btn btn-sm btn-icon" style={{ flexShrink: 0 }} title="复制此模板（含所有节点）"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const r = await api.post(`/api/admin/sop-templates/${t.id}/clone`, {});
+                    toast(`已复制：${r.name}（${r.node_count} 节点）`);
+                    await load();
+                    setCur(r.id);
+                  } catch (err: any) { toast(err.message, 'error'); }
+                }} aria-label="复制模板">
+                <Icon name="copy" size={16} />
+              </button>
+              {!t.is_system && (
+                <>
+                  <button className="btn btn-sm btn-icon" style={{ flexShrink: 0 }} title="重命名"
+                    onClick={(e) => { e.stopPropagation(); setDlg({ type: 'rename', id: t.id, name: t.name }); }} aria-label="重命名">
+                    <Icon name="edit" size={16} />
+                  </button>
+                  <button className="btn btn-sm btn-icon" style={{ flexShrink: 0, color: 'var(--danger-ink)' }} title="删除模板"
+                    onClick={(e) => { e.stopPropagation(); setDlg({ type: 'delete', id: t.id, name: t.name }); }} aria-label="删除模板">
+                    <Icon name="x" size={16} />
+                  </button>
+                </>
+              )}
+            </div>
             <div className="row" style={{ marginTop: 6 }}>
               {!!t.is_system && <span className="tag tag-blue">系统内置</span>}
               {!!t.is_default && <span className="tag tag-green">默认</span>}
-              {!t.is_default && !t.is_system && <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setDefault(t.id); }}>设为默认</button>}
+              {!t.is_default && <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setDefault(t.id); }}>设为默认</button>}
               <span className="muted" style={{ marginLeft: 'auto' }}>{t.nodes.length} 节点</span>
             </div>
           </div>
@@ -135,14 +161,22 @@ export default function Sop() {
                       <input className="input" value={n.name || ''} disabled={readonly} onChange={(e) => set(i, { name: e.target.value })} /></div>
                     {n.node_type === 'AI' ? (
                       <div className="form-row"><label>AI 动作</label>
-                        <select className="input" value={n.ai_action || 'CUSTOM'} disabled={readonly} onChange={(e) => set(i, { ai_action: e.target.value })}>
-                          {Object.entries(AI_ACTIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                        </select></div>
+                        <SearchSelect
+                          options={Object.entries(AI_ACTIONS).map(([k, v]) => ({ value: k, label: v }))}
+                          value={n.ai_action || 'CUSTOM'}
+                          disabled={readonly}
+                          onChange={(v) => set(i, { ai_action: String(v) })}
+                          placeholder="请选择 AI 动作"
+                        /></div>
                     ) : (
                       <div className="form-row"><label>负责角色</label>
-                        <select className="input" value={n.role || 'PO'} disabled={readonly} onChange={(e) => set(i, { role: e.target.value })}>
-                          {['CSM', 'PO', 'RD', 'QA'].map((r) => <option key={r} value={r}>{ROLE_NAME[r]}</option>)}
-                        </select></div>
+                        <SearchSelect
+                          options={[{ value: '', label: '无人' }, ...['CSM', 'PO', 'RD', 'QA'].map((r) => ({ value: r, label: ROLE_NAME[r] }))]}
+                          value={n.role ?? ''}
+                          disabled={readonly}
+                          onChange={(v) => set(i, { role: String(v) })}
+                          placeholder="请选择负责角色"
+                        /></div>
                     )}
                   </div>
                   {n.node_type === 'AI' && (
@@ -165,6 +199,48 @@ export default function Sop() {
         </p>
       </div>
       </div>
+
+      {/* 统一弹窗：新建/重命名（输入框）/删除（确认） */}
+      {dlg?.type === 'new' && (
+        <ConfirmModal
+          title="新建流程模板"
+          inputPlaceholder="模板名称，如：标准交付流程 - 变体A"
+          confirmText="创建"
+          onCancel={() => setDlg(null)}
+          onConfirm={async (name) => {
+            if (!name) return;
+            await api.post('/api/admin/sop-templates', { name });
+            setDlg(null); setCur(null); load(); toast('已创建');
+          }}
+        />
+      )}
+      {dlg?.type === 'rename' && (
+        <ConfirmModal
+          title="重命名流程模板"
+          inputPlaceholder="模板名称"
+          inputDefault={dlg.name}
+          confirmText="保存"
+          onCancel={() => setDlg(null)}
+          onConfirm={async (name) => {
+            if (!name || name === dlg.name) return setDlg(null);
+            try { await api.put(`/api/admin/sop-templates/${dlg.id}`, { name }); setDlg(null); await load(); toast('已重命名'); }
+            catch (err: any) { toast(err.message, 'error'); }
+          }}
+        />
+      )}
+      {dlg?.type === 'delete' && (
+        <ConfirmModal
+          title="删除流程模板"
+          message={`删除模板「${dlg.name}」？该操作不可恢复。`}
+          confirmText="删除"
+          danger
+          onCancel={() => setDlg(null)}
+          onConfirm={async () => {
+            try { await api.del(`/api/admin/sop-templates/${dlg.id}`); setDlg(null); await load(); toast('已删除'); }
+            catch (err: any) { toast(err.message, 'error'); }
+          }}
+        />
+      )}
     </div>
   );
 }

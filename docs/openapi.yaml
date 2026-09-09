@@ -28,6 +28,8 @@ tags:
     description: GitLab 代码模块同步（受 5 次/分限流约束，ADR-005）
   - name: code-context
     description: 代码感知上下文回显（F2 前置，ADR-008）
+  - name: requirement-action
+    description: P0 改造：产品指派研发/测试 + 需求聊天工作室（复用 clarifies 表）
 
 security:
   - BearerAuth: []
@@ -253,6 +255,145 @@ paths:
                       data: { $ref: '#/components/schemas/CodeContextResponse' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/requirements/{id}/assign:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [requirement-action]
+      operationId: assignRequirementTeam
+      summary: 产品指派研发/测试负责人（CSM 建单只选产品）
+      description: |
+        【P0 改造】CSM 建单不再选 rd_id/qa_id，由产品（或 ADMIN）在此接口指派。
+        权限：ADMIN 或该需求 po_id 负责人（产品）。目标用户角色校验：rd_id 必须 role=RD，qa_id 必须 role=QA。
+        至少传 rd_id 或 qa_id 之一；传 null 表示取消指派。响应 data 返回最终 rd_id/qa_id。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequirementAssignRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/RequirementAssignResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: 非产品/管理员
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { code: 1003, data: null, message: "需求研发/测试仅产品负责人或管理员可指派" }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/requirements/{id}/messages:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [requirement-action]
+      operationId: listRequirementMessages
+      summary: 需求聊天记录（含旧澄清，按 created_at 升序）
+      description: |
+        【P0 改造】返回该需求 clarifies 表全部记录（kind=CHAT 聊天消息 + kind=CLARIFY 旧澄清），
+        按 created_at, id 升序。前端按 kind 区分渲染；CHAT 消息不参与 open_clarifies 计数。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ChatMessage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [requirement-action]
+      operationId: sendRequirementMessage
+      summary: 需求参与人发送聊天消息
+      description: |
+        【P0 改造】任意参与人（CSM/PO/RD/QA/ADMIN）发消息，写入 clarifies（kind=CHAT，status=CHAT，asked_by=当前用户 name）。
+        不阻塞流程、不计入 open_clarifies、不触发 CLARIFYING。终态（DONE/CANCELLED）禁止发送。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 2000, description: 消息内容，必填，上限 2000 字符 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ChatMessage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: 非参与人
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { code: 1003, data: null, message: "仅需求参与人可发送消息" }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/requirements/{id}/messages/{msgId}/answer:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+      - name: msgId
+        in: path
+        required: true
+        schema: { type: integer }
+        description: 消息 ID（clarifies.id）
+    post:
+      tags: [requirement-action]
+      operationId: answerRequirementMessage
+      summary: 需求参与人回复某条聊天消息
+      description: |
+        【P0 改造】参与人（CSM/PO/RD/QA/ADMIN）回复一条 kind=CHAT 消息：answer 落库、status=ANSWERED。
+        仅做聊天回复，不触发 answerClarify 的描述合并与节点重跑（与旧澄清流程隔离）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties:
+                answer: { type: string, maxLength: 2000, description: 回复内容，必填（也兼容 text 字段名） }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ChatMessage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: 非参与人
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 components:
   securitySchemes:
     BearerAuth:
@@ -441,3 +582,32 @@ components:
                     path: { type: string }
                     chars: { type: integer }
                     truncated: { type: boolean }
+
+    RequirementAssignRequest:
+      type: object
+      description: 产品指派研发/测试（至少传其一；null 表示取消指派）
+      properties:
+        rd_id: { type: integer, nullable: true, description: 研发负责人用户 ID，必须 role=RD }
+        qa_id: { type: integer, nullable: true, description: 测试负责人用户 ID，必须 role=QA }
+
+    RequirementAssignResult:
+      type: object
+      description: 指派后的最终负责人
+      properties:
+        rd_id: { type: integer, nullable: true }
+        qa_id: { type: integer, nullable: true }
+
+    ChatMessage:
+      type: object
+      description: 需求聊天/澄清消息（clarifies 表行）
+      properties:
+        id: { type: integer }
+        requirement_id: { type: integer }
+        node_id: { type: integer, nullable: true }
+        asked_by: { type: string, description: 发送人（用户名）或 AI }
+        question: { type: string, description: 消息/问题内容 }
+        answer: { type: string, nullable: true, description: 回复内容（未回复为 null） }
+        status: { type: string, enum: [CHAT, ANSWERED, OPEN, FORCED], description: 'CHAT=聊天消息待回复；ANSWERED=已回复；OPEN/FORCED=旧澄清状态' }
+        kind: { type: string, enum: [CHAT, CLARIFY], description: 'CHAT=聊天消息；CLARIFY=旧澄清' }
+        created_at: { type: string }
+        answered_at: { type: string, nullable: true }

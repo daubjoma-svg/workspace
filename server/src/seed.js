@@ -5,8 +5,7 @@ const password = require('./crypto/password');
 function seed() {
   const hasUser = db.prepare('SELECT COUNT(*) n FROM users').get().n > 0;
   if (!hasUser) {
-    // OPS-B4：口令必须写 bcrypt 哈希。写明文会让全新部署的实例
-    // 在 bcrypt.compare(明文, 明文) 上恒 false，admin 都进不去，系统开局锁死。
+    // 口令可逆加密入库（AES-256-GCM）：写明文会让 verify 解密失败，admin 开局锁死
     const ins = db.prepare('INSERT INTO users(username,password,name,role) VALUES(?,?,?,?)');
     const seedUsers = [
       ['admin', 'admin123', '系统管理员', 'ADMIN'],
@@ -15,8 +14,8 @@ function seed() {
       ['rd01', '123456', '李工(研发)', 'RD'],
       ['qa01', '123456', '赵测(测试)', 'QA'],
     ];
-    seedUsers.forEach(([username, plain, name, role]) => ins.run(username, password.hash(plain), name, role));
-    console.log('[seed] 用户已创建(口令已 bcrypt 哈希),请首次登录后立即修改默认口令');
+    seedUsers.forEach(([username, plain, name, role]) => ins.run(username, password.store(plain), name, role));
+    console.log('[seed] 用户已创建(口令已可逆加密存储),请首次登录后立即修改默认口令');
   }
 
   const hasTpl = db.prepare('SELECT COUNT(*) n FROM sop_templates').get().n > 0;

@@ -5,6 +5,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const logger = require('./logger');
 const secret = require('./crypto/secret');
 
@@ -19,6 +20,9 @@ const { runMigrations, verifyMasterKey } = require('./migrate');
 const seed = require('./seed');
 
 const app = express();
+// 上传接口的图片 base64 可达 ~6.7MB（5MB 图片经 base64 膨胀），超出全局 5mb 限制，
+// 故在全局解析前为 /api/uploads 单独放宽到 8mb（body-parser 已解析过则后续解析器自动跳过）。
+app.use('/api/uploads', express.json({ limit: '8mb' }));
 app.use(express.json({ limit: '5mb' }));
 
 // 健康检查必须在 /api 前缀下：catch-all 只排除 /api，挂在别处会被 HTML 兜底成假绿。
@@ -28,6 +32,11 @@ app.use('/api/v1', router);
 app.use('/api', router);
 app.use('/api/v1/admin', admin);
 app.use('/api/admin', admin);
+
+// 图片上传目录：启动即保证存在；/uploads 只读静态托管，图片 URL 公开（前端拼 http://localhost:4000 前缀）
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+fs.mkdirSync(uploadsDir, { recursive: true });
+app.use('/uploads', express.static(uploadsDir));
 
 // 生产模式：托管前端构建产物
 const dist = path.join(__dirname, '..', '..', 'web', 'dist');
@@ -48,9 +57,24 @@ app.use((err, req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 4000;
+const HOST = process.env.HOST || '0.0.0.0';
 
 setMasterKeyStatus(verifyMasterKey());   // 先自检存量密文，再迁移（迁移只加密未加密的行）
 runMigrations();
 seed();
 
-app.listen(PORT, () => logger.info('server_started', { port: PORT, url: `http://localhost:${PORT}` }));
+function lanIps() {
+  const nets = os.networkInterfaces();
+  const out = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if ((net.family === 'IPv4' || net.family === 4) && !net.internal) out.push(net.address);
+    }
+  }
+  return out;
+}
+
+app.listen(PORT, HOST, () => {
+  logger.info('server_started', { host: HOST, port: PORT, url: `http://localhost:${PORT}` });
+  for (const ip of lanIps()) logger.info('lan_url', { url: `http://${ip}:${PORT}` });
+});

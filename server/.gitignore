@@ -1,0 +1,5 @@
+# 上传的图片文件不入版本控制
+uploads/
+
+# SOP_MASTER_KEY 绝不入仓（根目录副本可能被复制到 server/ 下，一并忽略）
+.sop-master-key

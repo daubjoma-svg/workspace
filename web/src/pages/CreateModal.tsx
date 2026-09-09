@@ -1,44 +1,51 @@
 import React, { useEffect, useState } from 'react';
-import { api, User, PlatformModule } from '../api';
+import { api, User, ROLE_NAME } from '../api';
 import { useApp } from '../App';
 import { Icon } from '../components/Icon';
+import { SearchSelect } from '../components/SearchSelect';
+import { ModuleSelect } from '../components/ModuleSelect';
+import { VersionInput, isValidTargetVersion } from '../components/VersionInput';
+import { RichTextEditor } from '../components/rich/RichTextEditor';
+import { isEmptyHtml } from '../lib/sanitize';
 
 export default function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: (id: number) => void }) {
   const { toast } = useApp();
   const [users, setUsers] = useState<User[]>([]);
-  const [modules, setModules] = useState<PlatformModule[]>([]);
   const [selModules, setSelModules] = useState<number[]>([]);
-  const [form, setForm] = useState({ title: '', description: '', customer_name: '', priority: 'P2', expect_date: '', po_id: '', rd_id: '', qa_id: '' });
-  useEffect(() => { api.get('/api/users').then(setUsers); api.get('/api/platform-modules').then(setModules); }, []);
+  // 契约 v2：创建需求只选产品负责人 + 目标版本，研发/测试由产品在详情页指派
+  const [form, setForm] = useState({ title: '', description: '', customer_name: '', priority: 'P2', target_version: '', po_id: '' });
+  /** 提交进行中：按钮置 busy+loading 文案，禁用避免重复点击（submit 端点可能等 LLM 较久） */
+  const [submitting, setSubmitting] = useState(false);
+  useEffect(() => { api.get('/api/users').then(setUsers); }, []);
 
   const byRole = (r: string) => users.filter((u) => u.role === r);
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
-  const toggleModule = (id: number) => setSelModules((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
 
   const submit = async () => {
-    if (!form.title || !form.description) return toast('请填写标题与描述');
+    if (submitting) return;
+    if (!form.title || isEmptyHtml(form.description)) return toast('请填写标题与描述');
+    if (!form.po_id) return toast('请选择对接产品');
+    // 后端 validTargetVersion 校验：target_version 必填且格式受限（示例 26M8V1）
+    if (!form.target_version.trim()) return toast('请填写目标版本');
+    if (!isValidTargetVersion(form.target_version)) return toast('目标版本格式不正确，示例：26M8V1（26年8月V1版）');
+    setSubmitting(true);
     try {
       const r = await api.post('/api/requirements', {
-        ...form,
-        po_id: form.po_id ? +form.po_id : null,
-        rd_id: form.rd_id ? +form.rd_id : null,
-        qa_id: form.qa_id ? +form.qa_id : null,
+        title: form.title,
+        description: form.description,
+        customer_name: form.customer_name,
+        priority: form.priority,
+        target_version: form.target_version.trim(),
+        po_id: +form.po_id,
         module_ids: selModules,
       });
+      // submit 端点 v0.7 改造后 fire-and-forget：AI 节点后台跑，submit 几 ms 返回
+      // （不阻塞，但前端保持 awaiting 以兼容后端可能仍有同步路径）
       await api.post(`/api/requirements/${r.id}/submit`);
       onDone(r.id);
     } catch (e: any) { toast(e.message); }
+    finally { setSubmitting(false); }
   };
-
-  const RoleSelect = ({ k, role, label }: { k: string; role: string; label: string }) => (
-    <div className="form-row">
-      <label>{label}</label>
-      <select className="input" value={(form as any)[k]} onChange={(e) => set(k, e.target.value)}>
-        <option value="">请选择</option>
-        {byRole(role).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-      </select>
-    </div>
-  );
 
   return (
     <div className="modal-mask" onClick={onClose}>
@@ -53,43 +60,40 @@ export default function CreateModal({ onClose, onDone }: { onClose: () => void; 
           <div className="form-row"><label>需求标题 *</label>
             <input className="input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="一句话描述需求" /></div>
           <div className="form-row"><label>需求描述 *（建议包含：业务场景 / 期望效果 / 边界条件）</label>
-            <textarea className="input" rows={5} value={form.description} onChange={(e) => set('description', e.target.value)} /></div>
+            <RichTextEditor value={form.description} onChange={(v) => set('description', v)} minRows={4} placeholder="业务场景 / 期望效果 / 边界条件…" /></div>
           <div className="grid2">
             <div className="form-row"><label>客户名称</label>
               <input className="input" value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} /></div>
             <div className="form-row"><label>紧急度</label>
-              <select className="input" value={form.priority} onChange={(e) => set('priority', e.target.value)}>
-                {['P0', 'P1', 'P2', 'P3'].map((p) => <option key={p}>{p}</option>)}
-              </select></div>
+              <SearchSelect
+                options={['P0', 'P1', 'P2', 'P3'].map((p) => ({ value: p, label: p }))}
+                value={form.priority}
+                onChange={(v) => set('priority', String(v))}
+                placeholder="请选择紧急度"
+              /></div>
           </div>
-          <div className="form-row"><label>期望上线时间</label>
-            <input className="input" type="date" value={form.expect_date} onChange={(e) => set('expect_date', e.target.value)} /></div>
+          <div className="form-row"><label>目标版本 *</label>
+            <VersionInput value={form.target_version} onChange={(v) => set('target_version', v)} /></div>
           <div className="form-row">
             <label>涉及平台模块(AI 评审将读取对应代码)</label>
-            {modules.length === 0
-              ? <div className="muted" style={{ fontSize: 12, padding: '8px 0' }}>管理员尚未配置平台模块,可不选;配置后 AI 将基于真实代码评估。</div>
-              : (
-                <div className="chip-group">
-                  {modules.map((m) => (
-                    <button type="button" key={m.id}
-                      className={`chip ${selModules.includes(m.id) ? 'on' : ''}`}
-                      onClick={() => toggleModule(m.id)} title={m.code_module_name}>
-                      {m.platform_name}
-                      {m.sync_status === 'OK' && <span className="chip-dot" />}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <ModuleSelect selected={selModules} onChange={setSelModules} />
           </div>
-          <div className="grid3">
-            <RoleSelect k="po_id" role="PO" label="对接产品 *" />
-            <RoleSelect k="rd_id" role="RD" label="对接研发 *" />
-            <RoleSelect k="qa_id" role="QA" label="对接测试 *" />
+          <div className="form-row">
+            <label>对接产品 *</label>
+            <SearchSelect
+              options={[{ value: '', label: '请选择' }, ...byRole('PO').map((u) => ({ value: u.id, label: u.name, subLabel: ROLE_NAME[u.role] }))]}
+              value={form.po_id}
+              onChange={(v) => set('po_id', String(v))}
+              placeholder="请选择"
+            />
+            <div className="hint">研发/测试负责人由产品在需求详情页指派</div>
           </div>
         </div>
         <div className="modal-f">
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={submit}>提交并进入流程</button>
+          <button className="btn" onClick={onClose} disabled={submitting}>取消</button>
+          <button className="btn btn-primary" onClick={submit} disabled={submitting}>
+            {submitting ? <><Icon name="loader" size={16} /> 提交中…</> : '提交并进入流程'}
+          </button>
         </div>
       </div>
     </div>

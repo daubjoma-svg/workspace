@@ -1,39 +1,41 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { api, User, getToken, setToken, clearToken } from './api';
+import { applyTheme } from './theme';
 import Login from './pages/Login';
 import Shell from './pages/Shell';
 
 interface Ctx {
   user: User | null;
   theme: { primary: string; mode: string };
-  toast: (msg: string) => void;
+  toast: (msg: string, tone?: 'ok' | 'error') => void;
   logout: () => void;
   refreshTheme: () => void;
 }
 export const AppCtx = createContext<Ctx>(null as any);
 export const useApp = () => useContext(AppCtx);
 
-function applyTheme(primary: string, mode: string) {
-  document.documentElement.style.setProperty('--primary', primary);
-  document.documentElement.dataset.mode = mode;
-}
-
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [theme, setTheme] = useState({ primary: '#4f7cff', mode: 'light' });
+  // primary 为空 = 跟随 design-tokens.css 的 --accent（不在此硬编码色值）
+  const [theme, setTheme] = useState({ primary: '', mode: 'light' });
   const [toastMsg, setToastMsg] = useState('');
+  const [toastTone, setToastTone] = useState<'ok' | 'error'>('ok');
   const [ready, setReady] = useState(false);
 
-  const toast = (msg: string) => {
+  // toast 支持语义色调：默认 ok（绿点），tone='error' 显示红点（语义 Token，非硬编码色值）
+  const toastTimer = useRef<number | undefined>(undefined);
+  const toast = (msg: string, tone: 'ok' | 'error' = 'ok') => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 2400);
+    setToastTone(tone);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToastMsg(''), 2400);
   };
 
   const loadTheme = async () => {
     try {
       const t = await api.get('/api/settings/theme');
       setTheme(t); applyTheme(t.primary, t.mode);
-    } catch { applyTheme('#4f7cff', 'light'); }
+    } catch { applyTheme('', 'light'); }
   };
 
   useEffect(() => {
@@ -49,7 +51,7 @@ export default function App() {
 
   if (!user) return (
     <AppCtx.Provider value={{ user, theme, toast, logout: () => {}, refreshTheme: loadTheme }}>
-      {toastMsg && <div className="toast">{toastMsg}</div>}
+      {toastMsg && <div className={'toast' + (toastTone === 'error' ? ' toast-error' : '')}>{toastMsg}</div>}
       <Login onLogin={(u, t) => { setToken(t); setUser(u); loadTheme(); }} />
     </AppCtx.Provider>
   );
@@ -60,7 +62,7 @@ export default function App() {
       logout: () => { api.post('/api/auth/logout').catch(() => {}); clearToken(); setUser(null); },
       refreshTheme: loadTheme,
     }}>
-      {toastMsg && <div className="toast">{toastMsg}</div>}
+      {toastMsg && <div className={'toast' + (toastTone === 'error' ? ' toast-error' : '')}>{toastMsg}</div>}
       <Shell />
     </AppCtx.Provider>
   );

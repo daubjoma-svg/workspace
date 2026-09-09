@@ -274,6 +274,10 @@ find server/src web/src \( -name '*.js' -o -name '*.tsx' -o -name '*.ts' \) | xa
 |------|----------|------|----------|
 | 2026-08-04 | v1.0 初始生成 | 用户确认三文档 + ①北星指标 ③定位 | 锁定 F1-F8 + B1-B6 一期范围 |
 | 2026-08-04 | F9 降二期 | 2.25 人日 > 2 阈值 | MVP 由 9 项收紧为 8 项 |
+| 2026-08-05 | 产品评审节点 PRD 必填（小改） | 用户需求：产品评审需添加 PRD 文档（Markdown/图片/链接），无 PRD 时确认流转必须拦截提示 | 影响：`engine.confirm()` 加 PO 节点 PRD 产物校验；`ReqDetail.tsx` PRD 编辑器升级 Markdown+图片粘贴+预览；「编辑 PRD」按钮条件由「已有产物」放宽为「PO 角色」 |
+| 2026-08-05 | 看板 todo 过滤修正 + 视觉紧凑化（小改） | 用户截图发现 PO「待出 PRD」混入了 RD/CSM 节点的需求；同时反映看板视觉拥挤 | 影响：`GET /requirements` 列表接口附 `current_node_role` + `current_node_type`（LEFT JOIN sop_nodes）；`roleConfig.ts` CSM/PO/RD/QA 四个 todo 过滤按当前节点角色+类型精确过滤；Board 紧凑化（stat card 缩小、ReqCard 精简版新增 `ReqCardCompact.tsx`、间距/字号收紧） |
+| 2026-08-05 | 打回语义修正 + 通知中心 + 需求可编辑 + 澄清去重 + AI失败可观测（5 点，用户拍板全做） | 用户指出：研发打回不应退给 AI 节点而应退给上一个人员节点；并要求主动优化同类问题 | 影响：①`engine.sendBack` 改向前找最近 HUMAN 节点（跳过 AI）②前端新增通知中心（侧栏铃铛+抽屉，后端接口已有）③新增 `PUT /requirements/:id` 需求编辑（提单人/ADMIN）④`answerClarify` 澄清答案不再无限叠加进 description ⑤新增 `AI_FAILED` 状态，AI 节点失败与等待确认可区分 |
+| 2026-08-05 | 注册功能 + 飞书通知（Q1=A 自建应用定向发个人，用户确认） | 用户需求：注册（姓名/密码/飞书 key 选填），流程到人员节点时若配置了飞书 key 则发消息到飞书用户 | 影响：`users` 加 `feishu_key`；`POST /api/auth/register`（默认 CSM）；`server/src/feishu.js`（tenant_access_token 缓存 + user_id 查 open_id + im/v1/messages，失败降级不影响流程）；4 处 `notify()` 后接飞书；Admin 新增「飞书」tab（app_id + AES 加密 app_secret，测试发送）；Login 页加注册 tab |
 
 ---
 

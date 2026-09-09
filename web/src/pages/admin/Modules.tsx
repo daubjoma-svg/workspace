@@ -1,213 +1,395 @@
 import React, { useEffect, useState } from 'react';
-import { api, CodeModule, ModuleMapping } from '../../api';
+import { api, CodeModule, BusinessModule } from '../../api';
 import { useApp } from '../../App';
+import { Icon } from '../../components/Icon';
+import { SecretInput } from '../../components/SecretInput';
+import { SearchSelect } from '../../components/SearchSelect';
+import { ConfirmModal } from '../../components/ConfirmModal';
 
+/**
+ * 模块管理（v0.7 重构版）
+ *
+ * 左侧 1/3 — 代码仓库：
+ *   加载 GitLab 项目 → 下拉选项目 → 添到代码仓库列表（自动从 GitLab 取名+路径）→ 同步 master
+ *   编辑：sub_path（monorepo 子路径，可选）
+ *
+ * 右侧 2/3 — 业务模块：
+ *   业务模块卡片：name + 描述 + 挂载的代码仓库 chips
+ *   挂代码：弹窗从代码仓库列表选一个
+ *
+ * 砍掉了：粘贴代码（PASTE）、独立 Git token、module_key/name/description 手动输入
+ */
 export default function Modules() {
   const { toast } = useApp();
-  const [cfg, setCfg] = useState({ base_url: '', token: '', token_set: false });
-  const [testRes, setTestRes] = useState<any>(null);
-  const [modules, setModules] = useState<CodeModule[]>([]);
-  const [mappings, setMappings] = useState<ModuleMapping[]>([]);
-  const [projects, setProjects] = useState<any[]>([]);
-  const [branches, setBranches] = useState<string[]>([]);
-  const [syncing, setSyncing] = useState<Record<number, boolean>>({});
-  const [mform, setMform] = useState({ module_key: '', name: '', description: '', gitlab_project_id: '', branch: 'main', sub_path: '' });
-  const [pform, setPform] = useState({ platform_name: '', platform_key: '', code_module_id: '', path_prefix: '' });
+  const [codeModules, setCodeModules] = useState<CodeModule[]>([]);
+  const [businessModules, setBusinessModules] = useState<BusinessModule[]>([]);
+  const [gitlabProjects, setGitlabProjects] = useState<any[]>([]);
+  const [gitlabCfg, setGitlabCfg] = useState({ base_url: '', token: '', token_set: false });
+  const [showGitCfg, setShowGitCfg] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // 业务模块编辑弹窗：editingBm 用 sentinel true 表示「新建模式」（null 关闭弹窗）
+  const [editingBm, setEditingBm] = useState<BusinessModule | true | null>(null);
+  const [bmForm, setBmForm] = useState({ name: '', description: '' });
+  // 业务模块挂代码弹窗
+  const [linkingBm, setLinkingBm] = useState<BusinessModule | null>(null);
+  const [linkForm, setLinkForm] = useState({ code_module_id: '', path_prefix: '' });
+  /** 统一删除确认弹窗：{type:'code',m} 删仓库 / {type:'biz',bm} 删业务模块 */
+  const [delDlg, setDelDlg] = useState<{ type: 'code' | 'biz'; id: number; name: string } | null>(null);
 
   const loadAll = async () => {
-    setModules(await api.get('/api/admin/modules'));
-    setMappings(await api.get('/api/admin/mappings'));
+    const [cm, bm, cfg] = await Promise.all([
+      api.get('/api/admin/modules'),
+      api.get('/api/admin/business-modules'),
+      api.get('/api/admin/gitlab/config'),
+    ]);
+    setCodeModules(cm || []);
+    setBusinessModules(bm || []);
+    setGitlabCfg({ base_url: cfg?.base_url || '', token: '', token_set: !!cfg?.token_set });
   };
-  useEffect(() => { (async () => { setCfg(await api.get('/api/admin/gitlab/config')); loadAll(); })(); }, []);
+  useEffect(() => { loadAll(); }, []);
 
-  const saveCfg = async () => {
-    await api.put('/api/admin/gitlab/config', { base_url: cfg.base_url, token: cfg.token });
-    toast('GitLab 配置已保存');
-    setCfg(await api.get('/api/admin/gitlab/config'));
-  };
-  const test = async () => {
-    setTestRes(null);
-    const r = await api.get('/api/admin/gitlab/test');
-    setTestRes(r);
-    if (r.ok) toast(`连接成功:${r.user}`);
-  };
   const loadProjects = async () => {
-    try { setProjects(await api.get('/api/admin/gitlab/projects')); toast(`已加载 ${projects.length} 个 GitLab 项目`); }
-    catch (e: any) { toast(e.message); }
-  };
-  const onPickProject = async (pid: string) => {
-    setMform((f) => ({ ...f, gitlab_project_id: pid }));
-    if (!pid) return setBranches([]);
-    try { setBranches(await api.get(`/api/admin/gitlab/projects/${encodeURIComponent(pid)}/branches`)); }
-    catch { setBranches([]); }
-  };
-  const addModule = async () => {
-    if (!mform.module_key || !mform.name || !mform.gitlab_project_id) return toast('请填模块 Key/名称并选择 GitLab 项目');
-    const proj = projects.find((p) => String(p.id) === String(mform.gitlab_project_id));
+    setBusy(true);
     try {
-      await api.post('/api/admin/modules', { ...mform, gitlab_project_path: proj?.path || '' });
-      setMform({ module_key: '', name: '', description: '', gitlab_project_id: '', branch: 'main', sub_path: '' });
-      setBranches([]);
-      loadAll(); toast('模块已创建,请点击「拉取」同步代码');
-    } catch (e: any) { toast(e.message); }
+      const list = await api.get('/api/admin/gitlab/projects');
+      setGitlabProjects(list || []);
+      toast(`已加载 ${list?.length || 0} 个 GitLab 项目`);
+    } catch (e: any) { toast(e.message, 'error'); }
+    finally { setBusy(false); }
   };
-  const sync = async (id: number) => {
-    setSyncing((s) => ({ ...s, [id]: true }));
-    try { await api.post(`/api/admin/modules/${id}/sync`); toast('代码拉取成功'); }
-    catch (e: any) { toast(e.message); }
-    setSyncing((s) => ({ ...s, [id]: false }));
-    loadAll();
-  };
-  const delModule = async (id: number) => {
-    if (!confirm('删除该代码模块及其映射?')) return;
-    await api.del(`/api/admin/modules/${id}`); loadAll(); toast('已删除');
-  };
-  const addMapping = async () => {
-    if (!pform.platform_name || !pform.platform_key || !pform.code_module_id) return toast('请填平台模块并选择代码模块');
-    try {
-      await api.post('/api/admin/mappings', { ...pform, code_module_id: +pform.code_module_id });
-      setPform({ platform_name: '', platform_key: '', code_module_id: '', path_prefix: '' });
-      loadAll(); toast('平台模块映射已创建');
-    } catch (e: any) { toast(e.message); }
-  };
-  const delMapping = async (id: number) => { await api.del(`/api/admin/mappings/${id}`); loadAll(); };
 
-  const syncTag = (s: string) => s === 'OK' ? <span className="tag tag-green"><span className="dot ok" />已同步</span>
-    : s === 'SYNCING' ? <span className="tag tag-blue">同步中…</span>
-    : s === 'FAILED' ? <span className="tag tag-red">失败</span>
-    : <span className="tag tag-grey">未拉取</span>;
+  const saveGitCfg = async () => {
+    await api.put('/api/admin/gitlab/config', { base_url: gitlabCfg.base_url, token: gitlabCfg.token.trim() || undefined });
+    toast('GitLab 配置已保存');
+    await loadAll();
+  };
+  const testGit = async () => {
+    try {
+      const r = await api.get('/api/admin/gitlab/test');
+      if (r.ok) toast(`连接成功: ${r.user}`);
+    } catch (e: any) { toast(e.message, 'error'); }
+  };
+
+  const addCode = async (gitlab_project_id: string) => {
+    const p = gitlabProjects.find((x) => String(x.id) === String(gitlab_project_id));
+    if (!p) return;
+    try {
+      await api.post('/api/admin/modules', { gitlab_project_id, gitlab_project_path: p.path || p.name });
+      toast(`已添加 ${p.path || p.name}`);
+      await loadAll();
+    } catch (e: any) {
+      // 重复添加：信息提示而非错误（前端过滤后基本不会触发，留兜底）
+      const msg = e.message || '添加失败';
+      if (msg.includes('已添加')) toast(`该 GitLab 项目已添加（前端已过滤，可能服务缓存未刷新）`);
+      else toast(msg, 'error');
+    }
+  };
+  const syncCode = async (id: number) => {
+    setBusy(true);
+    try {
+      const r = await api.post(`/api/admin/modules/${id}/sync`, {});
+      toast(`已同步 ${r.file_count} 个文件`);
+      await loadAll();
+    } catch (e: any) { toast(e.message, 'error'); }
+    finally { setBusy(false); }
+  };
+  const removeCode = async (m: CodeModule) => {
+    try { await api.del(`/api/admin/modules/${m.id}`); setDelDlg(null); toast('已删除'); await loadAll(); }
+    catch (e: any) { toast(e.message, 'error'); }
+  };
+  const editCodePath = async (id: number, sub_path: string) => {
+    try { await api.put(`/api/admin/modules/${id}`, { sub_path }); toast('已保存'); await loadAll(); }
+    catch (e: any) { toast(e.message, 'error'); }
+  };
+
+  // 业务模块 CRUD
+  const openBm = (bm: BusinessModule | null) => {
+    // 新建模式：sentinel true；编辑模式：传 BusinessModule；关闭：null
+    setEditingBm(bm ?? true);
+    setBmForm(bm ? { name: bm.name, description: bm.description || '' } : { name: '', description: '' });
+  };
+  const saveBm = async () => {
+    if (!bmForm.name.trim()) return toast('请填写业务模块名');
+    try {
+      // editingBm 是 true（新建）或 BusinessModule（编辑）
+      if (editingBm && typeof editingBm !== 'boolean') await api.put(`/api/admin/business-modules/${editingBm.id}`, bmForm);
+      else await api.post('/api/admin/business-modules', bmForm);
+      toast('已保存');
+      setEditingBm(null);
+      await loadAll();
+    } catch (e: any) { toast(e.message, 'error'); }
+  };
+  const removeBm = async (bm: BusinessModule) => {
+    try { await api.del(`/api/admin/business-modules/${bm.id}`); setDelDlg(null); toast('已删除'); await loadAll(); }
+    catch (e: any) { toast(e.message, 'error'); }
+  };
+
+  // 业务模块挂代码
+  const openLink = (bm: BusinessModule) => {
+    setLinkingBm(bm);
+    setLinkForm({ code_module_id: '', path_prefix: '' });
+  };
+  const linkCode = async () => {
+    if (!linkingBm || !linkForm.code_module_id) return toast('请选择代码仓库');
+    try {
+      await api.post(`/api/admin/business-modules/${linkingBm.id}/codes`, {
+        code_module_id: Number(linkForm.code_module_id),
+        path_prefix: linkForm.path_prefix,
+      });
+      toast('已挂载');
+      setLinkingBm(null);
+      await loadAll();
+    } catch (e: any) { toast(e.message, 'error'); }
+  };
+  const unlinkCode = async (bm: BusinessModule, codeId: number) => {
+    try { await api.del(`/api/admin/business-modules/${bm.id}/codes/${codeId}`); toast('已卸'); await loadAll(); }
+    catch (e: any) { toast(e.message, 'error'); }
+  };
+
+  const unlinked = codeModules.filter((cm) => !businessModules.some((bm) => bm.codes.some((c) => c.code_module_id === cm.id)));
 
   return (
-    <div className="stack">
+    <div>
       <div className="topbar">
         <div>
           <div className="crumb">管理后台</div>
           <h1>模块管理</h1>
         </div>
       </div>
-      {/* GitLab 连接配置 */}
-      <div className="card card-pad">
-        <div className="row" style={{ marginBottom: 4 }}>
+
+      {/* GitLab 连接 — 默认折叠（业务模块/代码仓库核心流程不依赖） */}
+      <div className="card card-pad" style={{ padding: 0, marginBottom: 16 }}>
+        <button type="button" onClick={() => setShowGitCfg((s) => !s)} className="row" style={{ width: '100%', padding: '14px 16px', border: 'none', background: 'none', color: 'var(--text)', cursor: 'pointer', textAlign: 'left' }}>
+          <Icon name={showGitCfg ? 'chevron-down' : 'chevron-right'} size={16} />
           <b>GitLab 连接</b>
-          <span className="muted">AI 评审与研发提示词的代码来源</span>
+          <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>添加 GitLab 仓库需要；已有代码仓库则用同步</span>
+          {gitlabCfg.token_set && <span className="tag tag-green" style={{ marginLeft: 'auto' }}>已配置</span>}
+        </button>
+        {showGitCfg && (
+          <div style={{ padding: '0 16px 16px' }}>
+            <div className="grid2" style={{ marginTop: 8 }}>
+              <div className="form-row"><label>Base URL</label>
+                <input className="input" placeholder="https://gitlab.company.com" value={gitlabCfg.base_url} onChange={(e) => setGitlabCfg({ ...gitlabCfg, base_url: e.target.value })} /></div>
+              <div className="form-row"><label>Private Access Token{gitlabCfg.token_set && <span className="muted">（已配置，留空则不修改）</span>}</label>
+                <SecretInput
+                  value={gitlabCfg.token}
+                  onChange={(v) => setGitlabCfg((c) => ({ ...c, token: v }))}
+                  hasStored={gitlabCfg.token_set}
+                  onReveal={async () => { const r = await api.get('/api/admin/gitlab/token'); return r?.token || ''; }}
+                  placeholder={gitlabCfg.token_set ? '已配置，留空则不修改' : 'glpat-…（需 read_api + read_repository 权限）'}
+                /></div>
+            </div>
+            <div className="row">
+              <button className="btn btn-primary" onClick={saveGitCfg}>保存配置</button>
+              <button className="btn" onClick={testGit}>测试连接</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* 左：代码仓库 */}
+        <div className="card card-pad">
+          <div className="row" style={{ marginBottom: 12 }}>
+            <b>代码仓库</b>
+            <span className="muted" style={{ fontSize: 12 }}>{codeModules.length} 个</span>
+            <button className="btn btn-sm" style={{ marginLeft: 'auto' }} onClick={loadProjects} disabled={busy}>
+              <Icon name="refresh" size={16} /> 加载 GitLab 项目
+            </button>
+          </div>
+
+          {gitlabProjects.length > 0 && (() => {
+            // 过滤已添加的 GitLab 项目（避免下拉选了重复的导致 UNIQUE 冲突 400）
+            const added = new Set(codeModules.map((c) => String(c.gitlab_project_id)));
+            const available = gitlabProjects.filter((p) => !added.has(String(p.id)));
+            if (available.length === 0) {
+              return <div className="muted" style={{ fontSize: 12, padding: 8 }}>所有加载的 GitLab 项目都已添加为代码仓库</div>;
+            }
+            return (
+              <div className="form-row">
+                <SearchSelect
+                  options={available.map((p) => ({ value: String(p.id), label: p.path || p.name, subLabel: p.name }))}
+                  value=""
+                  onChange={(v) => v && addCode(String(v))}
+                  placeholder="下拉选 GitLab 项目添加为代码仓库（已添加的自动隐藏）"
+                  emptyText="无可添加的 GitLab 项目"
+                />
+              </div>
+            );
+          })()}
+
+          {codeModules.length === 0 ? (
+            <div className="empty" style={{ padding: '28px 10px', textAlign: 'center' }}>
+              尚未添加代码仓库
+              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>展开顶部「GitLab 连接」→「加载 GitLab 项目」→ 下拉选</div>
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              {codeModules.map((m) => (
+                <li key={m.id} style={{ borderTop: '1px solid var(--border)', padding: '12px 0' }}>
+                  <div className="row" style={{ alignItems: 'center' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{m.gitlab_project_path || m.gitlab_project_id}</div>
+                      <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                        {m.sync_status === 'OK' && <span className="tag tag-green" style={{ marginRight: 6 }}>已同步</span>}
+                        {m.sync_status === 'FAILED' && <span className="tag tag-red" style={{ marginRight: 6 }}>失败</span>}
+                        {m.sync_status === 'SYNCING' && <span className="tag tag-blue" style={{ marginRight: 6 }}>同步中</span>}
+                        {m.sync_status === 'IDLE' && <span className="tag tag-grey" style={{ marginRight: 6 }}>未同步</span>}
+                        master · {m.file_count || 0} 文件
+                      </div>
+                    </div>
+                    <button className="btn btn-sm" onClick={() => syncCode(m.id)} disabled={busy} title="拉取代码">
+                      <Icon name="refresh" size={16} /> 拉取
+                    </button>
+                    <button className="btn btn-sm btn-danger" onClick={() => setDelDlg({ type: 'code', id: m.id, name: m.gitlab_project_path || m.gitlab_project_id })}>删除</button>
+                  </div>
+                  {m.error_msg && <div className="muted" style={{ color: 'var(--danger-ink)', fontSize: 11, marginTop: 4 }}>{m.error_msg.slice(0, 80)}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        <div className="grid2" style={{ marginTop: 12 }}>
-          <div className="form-row"><label>GitLab Base URL</label>
-            <input className="input" placeholder="https://gitlab.company.com" value={cfg.base_url} onChange={(e) => setCfg({ ...cfg, base_url: e.target.value })} /></div>
-          <div className="form-row"><label>Private Access Token{cfg.token_set && <span className="muted">(已配置,留空则不修改)</span>}</label>
-            <input className="input" type="password" placeholder="glpat-…(需 read_api + read_repository 权限)" value={cfg.token} onChange={(e) => setCfg({ ...cfg, token: e.target.value })} /></div>
-        </div>
-        <div className="row">
-          <button className="btn btn-primary" onClick={saveCfg}>保存配置</button>
-          <button className="btn" onClick={test}>测试连接</button>
-          {testRes && (
-            testRes.ok
-              ? <span className="tag tag-green"><span className="dot ok" />已连接为 {testRes.user}{testRes.project_count != null ? ` · 可见 ${testRes.project_count} 个项目` : ''}</span>
-              : <span className="tag tag-red">{testRes.error}</span>
+
+        {/* 右：业务模块 */}
+        <div className="card card-pad">
+          <div className="row" style={{ marginBottom: 12 }}>
+            <b>业务模块</b>
+            <span className="muted" style={{ fontSize: 12 }}>{businessModules.length} 个</span>
+            <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={() => openBm(null)}>
+              <Icon name="plus" size={16} /> 新建业务模块
+            </button>
+          </div>
+
+          {businessModules.length === 0 ? (
+            <div className="empty" style={{ padding: '28px 10px', textAlign: 'center' }}>
+              尚未配置业务模块
+              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>需求发起人提单时按业务模块关联 AI 代码上下文</div>
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              {businessModules.map((bm) => (
+                <li key={bm.id} style={{ borderTop: '1px solid var(--border)', padding: '12px 0' }}>
+                  <div className="row" style={{ alignItems: 'center' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{bm.name}</div>
+                      {bm.description && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{bm.description}</div>}
+                    </div>
+                    <button className="btn btn-sm" onClick={() => openBm(bm)}>编辑</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => setDelDlg({ type: 'biz', id: bm.id, name: bm.name })}>删除</button>
+                  </div>
+                  {/* 挂载的代码仓库 chips */}
+                  <div style={{ marginTop: 8 }}>
+                    {bm.codes.length === 0 ? (
+                      <div className="muted" style={{ fontSize: 11, fontStyle: 'italic' }}>未挂载代码仓库</div>
+                    ) : (
+                      <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                        {bm.codes.map((c) => (
+                          <span key={c.code_module_id} className={`tag ${c.sync_status === 'OK' ? 'tag-green' : 'tag-grey'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <Icon name="code-branch" size={16} /> {c.gitlab_project_path || c.gitlab_project_id}
+                            {c.path_prefix && <span className="muted" style={{ fontSize: 10 }}>· {c.path_prefix}</span>}
+                            <button type="button" onClick={() => unlinkCode(bm, c.code_module_id)} aria-label="卸下" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 2 }}>
+                              <Icon name="x" size={16} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => openLink(bm)}>
+                      <Icon name="plus" size={16} /> 挂代码
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {unlinked.length > 0 && (
+            <div className="muted" style={{ fontSize: 11, marginTop: 8, padding: 8, background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)' }}>
+              还有 {unlinked.length} 个仓库未挂载：{unlinked.map((c) => c.gitlab_project_path || c.gitlab_project_id).join('、')}
+            </div>
           )}
         </div>
       </div>
 
-      <div className="split" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        {/* 代码模块 */}
-        <div className="card card-pad">
-          <div className="row" style={{ marginBottom: 10 }}>
-            <b>代码模块</b>
-            <span className="muted">GitLab 仓库的本地快照</span>
-            <button className="btn btn-sm" style={{ marginLeft: 'auto' }} onClick={loadProjects}>加载 GitLab 项目</button>
-          </div>
-          <div className="card card-pad" style={{ background: 'var(--panel-2)', marginBottom: 14 }}>
-            <div className="grid2">
-              <div className="form-row"><label>模块 Key *</label>
-                <input className="input" placeholder="usercenter" value={mform.module_key} onChange={(e) => setMform({ ...mform, module_key: e.target.value })} /></div>
-              <div className="form-row"><label>显示名 *</label>
-                <input className="input" placeholder="用户中心" value={mform.name} onChange={(e) => setMform({ ...mform, name: e.target.value })} /></div>
-              <div className="form-row"><label>GitLab 项目 *</label>
-                <select className="input" value={mform.gitlab_project_id} onChange={(e) => onPickProject(e.target.value)}>
-                  <option value="">{projects.length ? '请选择项目' : '先点上方「加载 GitLab 项目」'}</option>
-                  {projects.map((p) => <option key={p.id} value={p.id}>{p.path}</option>)}
-                </select></div>
-              <div className="form-row"><label>分支</label>
-                <select className="input" value={mform.branch} onChange={(e) => setMform({ ...mform, branch: e.target.value })}>
-                  {!branches.length && <option value={mform.branch}>{mform.branch}</option>}
-                  {branches.map((b) => <option key={b} value={b}>{b}</option>)}
-                </select></div>
-              <div className="form-row" style={{ gridColumn: '1 / -1' }}><label>子路径(monorepo 可选)</label>
-                <input className="input" placeholder="如 services/user(留空取整个仓库)" value={mform.sub_path} onChange={(e) => setMform({ ...mform, sub_path: e.target.value })} /></div>
+      {/* 业务模块编辑弹窗 */}
+      {editingBm && (
+        <div className="modal-mask" onClick={() => setEditingBm(null)}>
+          <div className="modal card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-h">
+                            {editingBm && typeof editingBm !== 'boolean' ? '编辑业务模块' : '新建业务模块'}
+              <button className="btn btn-sm btn-icon" onClick={() => setEditingBm(null)} aria-label="关闭">
+                <Icon name="close" size={16} />
+              </button>
             </div>
-            <button className="btn btn-primary btn-sm" onClick={addModule}>+ 创建代码模块</button>
-          </div>
-          {modules.length === 0 && <div className="empty" style={{ padding: '28px 10px' }}>尚未配置代码模块</div>}
-          {modules.map((m) => (
-            <div className="module-item" key={m.id}>
-              <div className="mi-head">
-                <span className="mi-key">{m.module_key}</span>
-                <b>{m.name}</b>
-                {syncTag(m.sync_status)}
+            <div className="modal-b">
+              <div className="form-row"><label>业务模块名 *</label>
+                <input className="input" value={bmForm.name} onChange={(e) => setBmForm({ ...bmForm, name: e.target.value })} placeholder="如：用户中心 / 订单中心 / 营销活动" autoFocus />
               </div>
-              <div className="muted" style={{ fontSize: 12 }}>
-                {m.gitlab_project_path || m.gitlab_project_id} · {m.branch}{m.sub_path ? ` · ${m.sub_path}` : ''}
-                {m.commit_sha ? ` · ${m.commit_sha.slice(0, 8)}` : ''}
-              </div>
-              {m.last_synced_at && <div className="muted" style={{ fontSize: 11 }}>上次同步 {m.last_synced_at} · {m.file_count} 个文件{m.error_msg ? ` · ${m.error_msg}` : ''}</div>}
-              <div className="row" style={{ marginTop: 8 }}>
-                <button className="btn btn-sm btn-primary" disabled={syncing[m.id] || m.sync_status === 'SYNCING'} onClick={() => sync(m.id)}>
-                  {syncing[m.id] ? '拉取中…' : m.sync_status === 'OK' ? '重新拉取' : '拉取代码'}
-                </button>
-                <button className="btn btn-sm btn-danger" onClick={() => delModule(m.id)}>删除</button>
+              <div className="form-row"><label>描述</label>
+                <textarea className="input" rows={3} value={bmForm.description} onChange={(e) => setBmForm({ ...bmForm, description: e.target.value })} placeholder="可选" />
               </div>
             </div>
-          ))}
+            <div className="modal-f">
+              <button className="btn" onClick={() => setEditingBm(null)}>取消</button>
+              <button className="btn btn-primary" onClick={saveBm}>保存</button>
+            </div>
+          </div>
         </div>
+      )}
 
-        {/* 平台模块映射 */}
-        <div className="card card-pad">
-          <div className="row" style={{ marginBottom: 10 }}>
-            <b>平台模块映射</b>
-            <span className="muted">业务视角 → 代码模块</span>
-          </div>
-          <div className="card card-pad" style={{ background: 'var(--panel-2)', marginBottom: 14 }}>
-            <div className="grid2">
-              <div className="form-row"><label>平台模块名 *</label>
-                <input className="input" placeholder="用户中心" value={pform.platform_name} onChange={(e) => setPform({ ...pform, platform_name: e.target.value })} /></div>
-              <div className="form-row"><label>平台 Key *</label>
-                <input className="input" placeholder="user-center" value={pform.platform_key} onChange={(e) => setPform({ ...pform, platform_key: e.target.value })} /></div>
-              <div className="form-row"><label>映射到代码模块 *</label>
-                <select className="input" value={pform.code_module_id} onChange={(e) => setPform({ ...pform, code_module_id: e.target.value })}>
-                  <option value="">请选择</option>
-                  {modules.map((m) => <option key={m.id} value={m.id}>{m.name}({m.module_key})</option>)}
-                </select></div>
-              <div className="form-row"><label>路径前缀(可选)</label>
-                <input className="input" placeholder="如 src/main" value={pform.path_prefix} onChange={(e) => setPform({ ...pform, path_prefix: e.target.value })} /></div>
+      {/* 挂代码弹窗 */}
+      {linkingBm && (
+        <div className="modal-mask" onClick={() => setLinkingBm(null)}>
+          <div className="modal card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-h">
+              挂代码到「{linkingBm.name}」
+              <button className="btn btn-sm btn-icon" onClick={() => setLinkingBm(null)} aria-label="关闭">
+                <Icon name="close" size={16} />
+              </button>
             </div>
-            <button className="btn btn-primary btn-sm" onClick={addMapping}>+ 建立映射</button>
-          </div>
-          {mappings.length === 0 && <div className="empty" style={{ padding: '28px 10px' }}>尚未建立映射,CSM 提需求时将无法选择模块</div>}
-          {mappings.map((mp) => (
-            <div className="module-item" key={mp.id}>
-              <div className="mi-head">
-                <b>{mp.platform_name}</b>
-                <span className="pill">{mp.platform_key}</span>
-                <span className="muted" style={{ fontSize: 12 }}>→ {mp.code_module_name}({mp.module_key})</span>
-                {syncTag(mp.sync_status || 'IDLE')}
+            <div className="modal-b">
+              <div className="form-row"><label>代码仓库 *</label>
+                <SearchSelect
+                  options={unlinked.map((c) => ({ value: String(c.id), label: c.gitlab_project_path || c.gitlab_project_id }))}
+                  value={linkForm.code_module_id}
+                  onChange={(v) => setLinkForm({ ...linkForm, code_module_id: String(v) })}
+                  placeholder="选择要挂的代码仓库（仅显示未挂载的）"
+                />
               </div>
-              <div className="row" style={{ marginTop: 8 }}>
-                <button className="btn btn-sm btn-danger" onClick={() => delMapping(mp.id)}>删除映射</button>
+              <div className="form-row"><label>子路径前缀（可选）</label>
+                <input className="input" value={linkForm.path_prefix} onChange={(e) => setLinkForm({ ...linkForm, path_prefix: e.target.value })} placeholder="如 src/main/java（monorepo 子目录）" />
+                <div className="hint">不填则取该仓库的全部代码</div>
               </div>
             </div>
-          ))}
+            <div className="modal-f">
+              <button className="btn" onClick={() => setLinkingBm(null)}>取消</button>
+              <button className="btn btn-primary" onClick={linkCode} disabled={!linkForm.code_module_id}>挂载</button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="card card-pad" style={{ background: 'color-mix(in srgb, var(--info) 5%, var(--panel))' }}>
-        <b style={{ fontSize: 13 }}>使用说明</b>
-        <ol className="muted" style={{ marginTop: 8, paddingLeft: 18, lineHeight: 1.9, fontSize: 12.5 }}>
-          <li>配置 GitLab 地址与只读 Token → 测试连接。</li>
-          <li>「加载 GitLab 项目」→ 选择项目创建<b>代码模块</b> → 点「拉取代码」生成快照。</li>
-          <li>建立<b>平台模块映射</b>(如「用户中心」→ usercenter 仓库)。</li>
-          <li>CSM 提交需求时按<b>平台模块</b>多选;AI 评审/研发提示词自动读取对应代码做可行性分析与代码级指引。</li>
-        </ol>
-      </div>
+      {/* 统一删除确认弹窗 */}
+      {delDlg?.type === 'code' && (
+        <ConfirmModal
+          title="删除代码仓库"
+          message={`删除代码仓库「${delDlg.name}」？该操作不可恢复。`}
+          confirmText="删除"
+          danger
+          onCancel={() => setDelDlg(null)}
+          onConfirm={() => removeCode({ id: delDlg.id } as CodeModule)}
+        />
+      )}
+      {delDlg?.type === 'biz' && (
+        <ConfirmModal
+          title="删除业务模块"
+          message={`删除业务模块「${delDlg.name}」？其挂载关系也会一并删除。`}
+          confirmText="删除"
+          danger
+          onCancel={() => setDelDlg(null)}
+          onConfirm={() => removeBm({ id: delDlg.id } as BusinessModule)}
+        />
+      )}
     </div>
   );
 }
