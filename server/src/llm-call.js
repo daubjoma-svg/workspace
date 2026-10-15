@@ -97,22 +97,51 @@ function extractUsage(type, data) {
     : { prompt_tokens: u.prompt_tokens ?? null, completion_tokens: u.completion_tokens ?? null };
 }
 
-/** L3 抽取：先取 ```json 围栏块，再退化到首个 { 到末个 } 的平衡片段 */
+/**
+ * L3 抽取：先取代码围栏，再扫描字符串感知的平衡 JSON 片段。
+ * Trae 有时会在最终 JSON 前后输出说明，或一次返回多个事件；直接取首个/末个括号会把多个对象拼成非法 JSON。
+ */
 function extractJsonBlock(text) {
   if (typeof text !== 'string' || !text.trim()) return null;
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidates = [];
-  if (fenced) candidates.push(fenced[1]);
-  const s = text.indexOf('{');
-  const e = text.lastIndexOf('}');
-  if (s >= 0 && e > s) candidates.push(text.slice(s, e + 1));
-  const as = text.indexOf('[');
-  const ae = text.lastIndexOf(']');
-  if (as >= 0 && ae > as) candidates.push(text.slice(as, ae + 1));
+  const candidates = fenced ? [fenced[1]] : [];
+
+  // 扫描所有平衡的对象/数组候选，忽略字符串中的括号，避免嵌套描述或多对象输出破坏截取范围。
+  const scanBalanced = (source) => {
+    const out = [];
+    for (let start = 0; start < source.length; start += 1) {
+      if (source[start] !== '{' && source[start] !== '[') continue;
+      const stack = [];
+      let quote = false;
+      let escaped = false;
+      for (let i = start; i < source.length; i += 1) {
+        const ch = source[i];
+        if (quote) {
+          if (escaped) escaped = false;
+          else if (ch === '\\') escaped = true;
+          else if (ch === '"') quote = false;
+          continue;
+        }
+        if (ch === '"') { quote = true; continue; }
+        if (ch === '{' || ch === '[') stack.push(ch);
+        else if (ch === '}' || ch === ']') {
+          const open = stack.pop();
+          if ((ch === '}' && open !== '{') || (ch === ']' && open !== '[')) break;
+          if (!stack.length) {
+            out.push(source.slice(start, i + 1));
+            break;
+          }
+        }
+      }
+    }
+    return out;
+  };
+
+  candidates.push(...scanBalanced(text));
   candidates.push(text);
   for (const c of candidates) {
     try {
-      const v = JSON.parse(c.trim());
+      const v = JSON.parse(String(c).trim());
       if (v && typeof v === 'object') return v;
     } catch { /* 试下一个候选 */ }
   }
@@ -164,129 +193,169 @@ function validateOrFallback(action, candidate, raw, meta) {
 
 /* ---------------- 主流程 ---------------- */
 
+/** traecli 内部注入的内容（系统提示 / 工具调用 JSON dump），不应作为用户可见输出 */
+function isTraeInternalInject(s) {
+  if (!s || typeof s !== 'string') return true;
+  const t = s.trim();
+  if (!t) return true;
+  if (t.includes('<system-reminder>') || t.includes('\\u003csystem-reminder\\u003e')) return true;
+  if (/^Deferred Tools Directory/i.test(t)) return true;
+  if (/Additional tools from MCP servers/i.test(t) && t.length < 1200) return true;
+  if (/^# Deferred Tools/i.test(t)) return true;
+  if (/^\{"?tool(_call|_result)?"?\s*:/.test(t)) return true;
+  return false;
+}
+
+/** 去掉 traecli 注入的 <system-reminder> 标签块 */
+function cleanTraeContent(s) {
+  return String(s || '')
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, '')
+    .replace(/\\u003csystem-reminder\\u003e[\s\S]*?\\u003c\/system-reminder\\u003e/gi, '')
+    .trim();
+}
+
 /**
- * trae-cli 本地进程调用（Trae 没有公开 HTTP API，但 CLI 登录令牌 trae-lt-xxx 可用）
- * 执行 `traecli --print --output-format json <prompt>`，返回与 OpenAI 兼容结构，
- * 让上游 extractContent / stepCall / aiChat 完全无感。
+ * 解析 traecli `exec --json` 的 JSONL 事件流，取最后一条 agent_message 作为最终回复。
+ * 例：{"type":"item.completed","item":{"type":"agent_message","text":"你好"}}
+ */
+function parseTraeCliJsonl(stdout) {
+  let content = '';
+  for (const line of String(stdout || '').split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t.startsWith('{')) continue;
+    let ev = null;
+    try { ev = JSON.parse(t); } catch { continue; }
+    if (!ev || ev.type !== 'item.completed') continue;
+    const item = ev.item || {};
+    if (item.type !== 'agent_message' || typeof item.text !== 'string') continue;
+    const text = cleanTraeContent(item.text);
+    if (!text || isTraeInternalInject(text)) continue;
+    content = text;
+  }
+  return content;
+}
+
+/**
+ * 运行本机 traecli，stdout/stderr 重定向到临时文件再读取。
+ * 不能用 Node 的管道（execFile 默认）：traecli 2.x 在 Node socketpair 管道上启动阶段会卡死、
+ * 零输出直到超时；重定向到普通文件则正常（shell 的 `> file` / `| head` 均可）。
+ *
+ * 沙箱：子进程一律经 spawnSandboxed 启动（Seatbelt 只读边界 + 隔离环境），
+ * env 参数仅用于透传 TRAECLI_PERSONAL_ACCESS_TOKEN，绝不继承 process.env。
+ */
+function runTraeCli(bin, args, { timeoutMs, env, stdinFile } = {}) {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { spawnSandboxed, sandboxEnv, REPOS_DIR } = require('./sandbox/seatbelt');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'traecli-'));
+  const outPath = path.join(dir, 'out.jsonl');
+  const errPath = path.join(dir, 'err.txt');
+  const outFd = fs.openSync(outPath, 'w');
+  const errFd = fs.openSync(errPath, 'w');
+  // 有 stdinFile 时把 prompt 用普通文件描述符喂给 stdin（不是 socketpair 管道，避免 2.x 启动卡死）
+  const inFd = stdinFile ? fs.openSync(stdinFile, 'r') : null;
+  return new Promise((resolve) => {
+    let timedOut = false;
+    let spawnError = null;
+    const child = spawnSandboxed(bin, args, {
+      env: sandboxEnv({ TRAECLI_PERSONAL_ACCESS_TOKEN: (env && env.TRAECLI_PERSONAL_ACCESS_TOKEN) || '' }),
+      stdio: [inFd == null ? 'ignore' : inFd, outFd, errFd],
+    });
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, Number(timeoutMs) || 70000);
+    const finish = (code, signal) => {
+      clearTimeout(timer);
+      let stdout = '';
+      let stderr = '';
+      try { stdout = fs.readFileSync(outPath, 'utf8'); } catch { /* 读取失败按空处理 */ }
+      try { stderr = fs.readFileSync(errPath, 'utf8'); } catch { /* 同上 */ }
+      try { fs.closeSync(outFd); fs.closeSync(errFd); } catch { /* 已关闭 */ }
+      if (inFd != null) { try { fs.closeSync(inFd); } catch { /* 已关闭 */ } }
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* 清理失败不影响结果 */ }
+      resolve({ code, signal, stdout, stderr, timedOut, spawnError });
+    };
+    child.on('error', (e) => { spawnError = e.message; finish(-1, 'ERROR'); });
+    child.on('exit', finish);
+  });
+}
+
+/**
+ * trae-cli 本地进程调用（Trae 没有公开 HTTP API，但 CLI 登录令牌 trae-lt-xxx 可用）。
+ * traecli 2.x 非交互统一走 `exec` 子命令：`traecli exec --json [-m model] <prompt>`，
+ * 输出 JSONL 事件流；旧的 `--print/--output-format/--query-timeout` 顶层参数已移除。
+ * 返回与 OpenAI 兼容结构，让上游 extractContent / stepCall / aiChat 完全无感。
  */
 async function traeCliOnce(req, timeoutMs) {
-  const { execFile } = require('child_process');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { REPOS_DIR } = require('./sandbox/seatbelt');
   const bin = process.env.TRAECLI_BIN || '/Users/admin/.local/bin/traecli';
-  const base = req.body.messages ? req.body.messages.map((m) => m.content || '').join('\n\n---\n\n') : (req.body?.prompt || '');
-  const prompt = base;
-  // traecli 单次含登录 token 交换 + 模型推理，15s 不够（实测 15s 会静默空输出）；固定 60s
-  const timeoutSec = 60;
-  // 调试：traecli 触发 agent mode 的阈值与 prompt 长度有关——打印 prompt 长度便于排查
-  logger.warn('traecli_prompt_len', { len: prompt.length, head120: prompt.slice(0, 120).replace(/\n/g, ' ') });
-  return new Promise((resolve, reject) => {
-    execFile(bin, ['--print', '--output-format', 'json', '--query-timeout', `${timeoutSec}s`, prompt], {
-      timeout: 70000, // traecli 固定 70s（query-timeout 60s + 缓冲），不受上层 15s fast-fail 影响
-      env: { ...process.env, HOME: process.env.HOME || '/Users/admin', TRAECLI_PERSONAL_ACCESS_TOKEN: req.trae_token || '' },
-      maxBuffer: 20 * 1024 * 1024,
-    }, (err, stdout) => {
-      if (err) {
-        reject(new Error(`traecli 调用失败: ${String(err.message).slice(0, 200)}`));
-        return;
-      }
-      let data = null;
-      try { data = JSON.parse(stdout); } catch { /* 非 JSON，取原文 */ }
-
-      // 判断一段 content 是否是 traecli 内部注入的系统提示（不应作为用户可见输出）
-      const isInternalInject = (s) => {
-        if (!s || typeof s !== 'string') return true;
-        const t = s.trim();
-        if (!t) return true;
-        if (t.includes('<system-reminder>') || t.includes('\\u003csystem-reminder\\u003e')) return true;
-        if (/^Deferred Tools Directory/i.test(t)) return true;
-        if (/Additional tools from MCP servers/i.test(t) && t.length < 1200) return true;
-        if (/^# Deferred Tools/i.test(t)) return true;
-        if (/^You must use (Chinese|中文)/i.test(t)) return true;
-        // agent 内部的工具调用/结果 JSON dump
-        if (/^\{"?tool(_call|_result)?"?\s*:/.test(t)) return true;
-        return false;
-      };
-      // 判断一段 content 是否是用户原始 prompt（不要回显 prompt 本身当答案）
-      const isUserPromptEcho = (s) => /^你是(全局管理员|CSM|产品经理|研发负责人|测试负责人)/.test(s);
-
-      // 从一条消息对象里取出最可能是模型给用户看的纯文本
-      const pickText = (m) => {
-        if (!m) return '';
-        // assistant 消息可能是字符串或 { type: 'text', text: ... } 数组
-        let c = m.content;
-        if (Array.isArray(c)) c = c.map((x) => (x && typeof x === 'object' ? (x.text || '') : String(x || ''))).join('\n');
-        c = String(c || '').trim();
-        // 去掉 traecli 注入的 <system-reminder>...</system-reminder> 标签块
-        c = c.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, '').trim();
-        c = c.replace(/\\u003csystem-reminder\\u003e[\s\S]*?\\u003c\/system-reminder\\u003e/gi, '').trim();
-        return c;
-      };
-
-      let content = '';
-      let model = 'trae-cli';
-      if (data) {
-        // 1) 遍历所有 agent_state 的所有 messages，取最后一条「真正的 assistant 回复」
-        const states = Array.isArray(data.agent_states) ? data.agent_states : [];
-        const candidates = [];
-        for (const st of states) {
-          const msgs = Array.isArray(st && st.messages) ? st.messages : [];
-          for (let i = msgs.length - 1; i >= 0; i -= 1) {
-            const m = msgs[i];
-            if (!m) continue;
-            const txt = pickText(m);
-            if (!txt) continue;
-            // assistant 消息且非内部注入、非 prompt 回显 → 最高优先级候选
-            if (m.role === 'assistant' && !isInternalInject(txt) && !isUserPromptEcho(txt)) {
-              candidates.push({ txt, src: m, agent: st });
-            }
-          }
-        }
-        if (candidates.length > 0) {
-          // 取最后（最新）一条
-          content = String(candidates[0].txt);
-          const srcModel = candidates[0].src?.extra?._source_model
-            || candidates[0].agent?._source_model
-            || data.message?.extra?._source_model;
-          if (srcModel) model = srcModel;
-        } else {
-          // 2) 顶层常见字段回退
-          const topKeys = ['final_answer', 'final_result', 'answer', 'result', 'response', 'output', 'reply', 'text'];
-          for (const k of topKeys) {
-            const v = data[k];
-            if (typeof v === 'string' && v.trim() && !isInternalInject(v)) { content = v.trim(); break; }
-          }
-          // 3) data.message.content（可能是完整 messages 数组，也可能是纯文本）
-          if (!content) {
-            const mc = data.message?.content;
-            if (typeof mc === 'string') {
-              const cleaned = pickText({ content: mc });
-              if (!isInternalInject(cleaned) && !isUserPromptEcho(cleaned)) content = cleaned;
-            } else if (Array.isArray(mc)) {
-              for (let i = mc.length - 1; i >= 0; i -= 1) {
-                const t = pickText(mc[i]);
-                if (t && !isInternalInject(t) && !isUserPromptEcho(t)) { content = t; break; }
-              }
-            }
-          }
-        }
-      }
-
-      if (content) {
-        resolve({
-          choices: [{ message: { role: 'assistant', content, reasoning_content: '' } }],
-          model,
-          usage: { prompt_tokens: null, completion_tokens: null },
-        });
-        return;
-      }
-      // 兜底：拿不到有效文本时返回明确失败，而不是把内部 JSON dump 出来
-      resolve({
-        choices: [{ message: { role: 'assistant', content: '', reasoning_content: '' } }],
-        model: 'trae-cli',
-        _parse_failed: true,
-        usage: { prompt_tokens: null, completion_tokens: null },
-      });
-    });
+  const prompt = req.body.messages ? req.body.messages.map((m) => m.content || '').join('\n\n---\n\n') : (req.body?.prompt || '');
+  const model = req.body?.model || '';
+  // trae_cli：让 traecli 原生 Agent 能力（自主 grep/read/glob + 读图）跑起来的挂载参数
+  //   cwd      主工作区（首选仓库快照，traecli 以它为 root 探索）
+  //   addDirs  其余仓库快照（--add-dir，AI 可跨仓联查前后端）
+  //   images   本地图片绝对路径（--image，视觉理解用户截图）
+  //   sandbox  'read-only'：只读探索，杜绝 AI 改快照
+  const opts = req.trae_cli || {};
+  const images = (Array.isArray(opts.images) ? opts.images : []).filter((x) => typeof x === 'string' && x);
+  const okResult = (content, extra = {}) => ({
+    choices: [{ message: { role: 'assistant', content, reasoning_content: '' } }],
+    model: model || 'trae-cli',
+    usage: { prompt_tokens: null, completion_tokens: null },
+    ...extra,
   });
+
+  // ACP 传输：图片以 base64 content block 直接交给模型做多模态理解。
+  // `exec -i` 会把本地图片转成内部 CDN 短路径，自定义 OpenAI 兼容 provider（如阿里云 MaaS）
+  // 会以 `Unsupported image_url format` 拒绝；ACP 无此问题，且同样保留自主检索/读文件能力。
+  if (opts.transport === 'acp' || images.length) {
+    const { runAcpPrompt } = require('./agent/acp-client');
+    const acp = await runAcpPrompt({
+      bin,
+      model,
+      cwd: opts.cwd,
+      addDirs: Array.isArray(opts.addDirs) ? opts.addDirs : [],
+      // 不透传 bypass：acp-client 内部会强制降级为 default（只读探索）
+      permissionMode: opts.permissionMode && !String(opts.permissionMode).startsWith('bypass')
+        ? opts.permissionMode
+        : undefined,
+      prompt,
+      images,
+      timeoutMs: Math.max(Number(timeoutMs) || 0, 70000),
+      env: { TRAECLI_PERSONAL_ACCESS_TOKEN: req.trae_token || '' },
+    });
+    if (acp.content) return okResult(acp.content, { _acp_usage: acp.usage || null, _stop_reason: acp.stopReason || null });
+    return { ...okResult(''), _parse_failed: true };
+  }
+
+  const args = ['exec', '--skip-git-repo-check', '--json'];
+  if (model) args.push('-m', model);
+  // 只读策略：模型生成的 shell 命令一律按只读执行（Seatbelt 之外的第二道闸）
+  args.push('-s', 'read-only');
+  if (opts.permissionMode && !String(opts.permissionMode).startsWith('bypass')) {
+    args.push('--permission-mode', String(opts.permissionMode));
+  }
+  // 工作目录：优先业务传入的仓库快照根；没有就落在 repos 根（绝不落到服务器目录）
+  args.push('-C', String(opts.cwd || REPOS_DIR));
+  for (const d of (Array.isArray(opts.addDirs) ? opts.addDirs : [])) {
+    if (d) args.push('--add-dir', String(d));
+  }
+  args.push(prompt);
+  // traecli 含登录 token 交换 + 模型推理，给足超时
+  const result = await runTraeCli(bin, args, {
+    timeoutMs: Math.max(Number(timeoutMs) || 0, 70000),
+    env: { TRAECLI_PERSONAL_ACCESS_TOKEN: req.trae_token || '' },
+  });
+  const { code, stdout, stderr, timedOut, spawnError } = result;
+  const content = parseTraeCliJsonl(stdout);
+  if (content) return okResult(content);
+  if (timedOut) throw new Error('traecli 调用超时（未在超时时间内返回）');
+  if (spawnError) throw new Error(`traecli 启动失败: ${spawnError}`);
+  if (code !== 0) throw new Error(`traecli 调用失败: ${String(stderr || `exit ${code}`).slice(0, 300)}`);
+  // 兜底：退出码 0 但拿不到有效文本时返回明确失败，而不是把内部 JSON dump 出来
+  return { ...okResult(''), _parse_failed: true };
 }
 
 async function requestOnce(req, timeoutMs) {
@@ -436,4 +505,5 @@ module.exports = {
   DEFAULT_TIMEOUT_MS, JSON_LITERAL_HINT, MAX_ATTEMPTS,
   callLLMStructured, extractJsonBlock, extractContent, normalizeToShape,
   validateOrFallback, shouldStepDown, stepDown, buildRequest, requestOnce, failure,
+  parseTraeCliJsonl, runTraeCli,
 };

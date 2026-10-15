@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { api, User, getToken, setToken, clearToken } from './api';
 import { applyTheme } from './theme';
+import { ImageZoom } from './components/ImageZoom';
 import Login from './pages/Login';
 import Shell from './pages/Shell';
 
@@ -63,6 +64,7 @@ export default function App() {
       refreshTheme: loadTheme,
     }}>
       {toastMsg && <div className={'toast' + (toastTone === 'error' ? ' toast-error' : '')}>{toastMsg}</div>}
+      <ImageZoom />
       <Shell />
     </AppCtx.Provider>
   );

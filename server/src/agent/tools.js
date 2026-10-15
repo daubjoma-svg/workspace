@@ -17,9 +17,7 @@ const { isInside, safeJoin } = require('../repo/paths');
 const { REPOS_DIR } = require('../repo/archive');
 const { walk } = require('../repo/archive');
 const { CODE_EXT } = require('../repo/code-context');
-const { execFileSync } = require('child_process');
 const logger = require('../logger');
-const AUTO_PULL_INTERVAL_MS = 30 * 60 * 1000;  // 30 分钟内拉过则跳过
 
 const MAX_READ_CHARS = 8000;   // 单文件读入预算
 const MAX_GREP_HITS = 20;      // grep 命中上限
@@ -39,29 +37,9 @@ function resolveRepoPath(repoRoot, rel) {
   } catch { return null; }
 }
 
-/** 仓库上下文：由外层构造（某需求的业务模块 → code_modules 快照根），Agent 只消费 */
-function maybeAutoPull(repoRoot, repoPath) {
-  // AI 评估时若代码库超过 30 分钟没拉过，自动 git pull（保证读最新代码）
-  // 失败不阻塞评估（catch + log）—— 旧代码仍可工作
-  try {
-    const gitDir = path.join(repoRoot, '.git');
-    if (!fs.existsSync(gitDir)) return;
-    const fetchHead = path.join(gitDir, 'FETCH_HEAD');
-    const stat = fs.existsSync(fetchHead) ? fs.statSync(fetchHead) : null;
-    const ageMs = stat ? (Date.now() - stat.mtimeMs) : Infinity;
-    if (ageMs < AUTO_PULL_INTERVAL_MS) return;  // 30 分钟内拉过，跳过
-    execFileSync('git', ['pull', '--depth=1', '--ff-only'], {
-      cwd: repoRoot,
-      timeout: 15000,
-      stdio: 'ignore',
-      env: { ...process.env, HOME: process.env.HOME || '/Users/admin' },
-    });
-    logger.info({ event: 'repo_auto_pull_ok', repo: repoPath });
-  } catch (e) {
-    logger.warn({ event: 'repo_auto_pull_failed', repo: repoPath, reason: String(e.message || e).slice(0, 120) });
-  }
-}
-
+/** 仓库上下文：由外层构造（某需求的业务模块 → code_modules 快照根），Agent 只消费。
+ *  注意：不做自动 git pull——AI 路径必须只读、不得写快照或碰主机 git 配置；
+ *  快照更新走「模块管理」的管理员同步动作（repo/archive.js syncModule）。 */
 function buildRepoContexts(rows) {
   return rows
     .filter((r) => r.sync_status === 'OK')
@@ -69,7 +47,6 @@ function buildRepoContexts(rows) {
       const dirKey = String(r.gitlab_project_id).replace(/[^A-Za-z0-9._-]/g, '_');
       const base = path.join(REPOS_DIR, dirKey);
       const root = fs.existsSync(base) ? base : null;
-      if (root) maybeAutoPull(root, r.repo_path);
       return {
         repo_id: r.gitlab_project_id,
         repo_path: r.gitlab_project_path,

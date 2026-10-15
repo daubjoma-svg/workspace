@@ -4,6 +4,7 @@ import { useApp } from '../App';
 import { Icon } from '../components/Icon';
 import { SearchSelect } from '../components/SearchSelect';
 import { ModuleSelect } from './ModuleSelect';
+import { CustomerInput } from './CustomerInput';
 import { VersionInput, isValidTargetVersion } from '../components/VersionInput';
 import { RichTextEditor } from './rich/RichTextEditor';
 import { isEmptyHtml } from '../lib/sanitize';
@@ -24,6 +25,7 @@ export function ReqEditModal({ req, onClose, onSaved }: ReqEditModalProps) {
   const { toast } = useApp();
   const isDraft = req.status === 'DRAFT';
   const [users, setUsers] = useState<User[]>([]);
+  const [customers, setCustomers] = useState<string[]>([]);
   const [selModules, setSelModules] = useState<number[]>([]);
   const [form, setForm] = useState({
     title: req.title,
@@ -37,6 +39,7 @@ export function ReqEditModal({ req, onClose, onSaved }: ReqEditModalProps) {
 
   useEffect(() => {
     api.get('/api/users').then(setUsers).catch(() => {});
+    api.get('/api/customer-names').then(setCustomers).catch(() => {});
     // v0.7：modules 是 (业务模块 × 仓库) 笛卡尔积；去重得业务模块 id
     setSelModules(Array.from(new Set((req.modules || []).map((m) => m.business_module_id))));
   }, [req]);
@@ -50,10 +53,10 @@ export function ReqEditModal({ req, onClose, onSaved }: ReqEditModalProps) {
     if (form.target_version.trim() && !isValidTargetVersion(form.target_version)) {
       return toast('目标版本格式不正确，示例：26M8V1（26年8月V1版）');
     }
-    // Jira 链接：可选；非空则必须是 http(s) 开头
+    // Jira 支持完整链接或单号，和产品指派入口保持一致。
     const jiraUrl = form.jira_url.trim();
-    if (jiraUrl && !/^https?:\/\//i.test(jiraUrl)) {
-      return toast('Jira 链接必须以 http:// 或 https:// 开头');
+    if (jiraUrl && !/^https?:\/\//i.test(jiraUrl) && !/^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(jiraUrl)) {
+      return toast('Jira 请填写完整链接或单号（如 PINGTAI-11952）');
     }
     const body: UpdateRequirementBody = {
       description: form.description,
@@ -93,7 +96,7 @@ export function ReqEditModal({ req, onClose, onSaved }: ReqEditModalProps) {
             <RichTextEditor value={form.description} onChange={(v) => set('description', v)} minRows={4} placeholder="业务场景 / 期望效果 / 边界条件…" /></div>
           <div className="grid2">
             <div className="form-row"><label>客户名称</label>
-              <input className="input" value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} /></div>
+              <CustomerInput value={form.customer_name} onChange={(v) => set('customer_name', v)} options={customers} /></div>
             <div className="form-row"><label>紧急度</label>
               <SearchSelect
                 options={['P0', 'P1', 'P2', 'P3'].map((p) => ({ value: p, label: p }))}
@@ -109,7 +112,7 @@ export function ReqEditModal({ req, onClose, onSaved }: ReqEditModalProps) {
             <input className="input" value={form.jira_url} onChange={(e) => set('jira_url', e.target.value)}
               placeholder="https://jira.xxx/browse/PINGTAI-11880" />
             <div className="hint">关联 Jira 单后，列表会显示单号（如 PINGTAI-11880）并可点击跳转；清空即可取消关联</div></div>
-          <div className="form-row"><label>涉及平台模块</label>
+          <div className="form-row"><label>涉及平台模块（前端 / 后端，均可选）</label>
             <ModuleSelect selected={selModules} onChange={setSelModules} /></div>
           <div className="form-row">
             <label>对接产品</label>

@@ -26,7 +26,8 @@ const EVALUATE = {
     rationality: {
       type: 'object',
       properties: {
-        // P0 改造：AI 不再向 CSM 提问阻塞流程。FEASIBLE=可直接进入产品评审；NEEDS_ATTENTION=有风险但继续走
+        // verdict 只允许 FEASIBLE / NEEDS_ATTENTION：FEASIBLE=可直接进入产品评审；NEEDS_ATTENTION=有风险但继续走。
+        // 关键信息缺失由 questions（顶层）表达：非空即挂起评估节点等需求发起人补充后重跑。
         verdict: { type: 'string', enum: ['FEASIBLE', 'NEEDS_ATTENTION'] },
         reason: { type: 'string' },
         existing_capability: { type: 'string' },
@@ -34,9 +35,29 @@ const EVALUATE = {
       required: ['verdict', 'reason'],
       additionalProperties: false,
     },
+    summary: { type: 'string', description: '总结：1-2 句，让需求提出人一眼知道问题、是否值得做与当前结论；只写业务语言，不含技术实现' },
+    scheduling: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['FAST_TRACK', 'READY', 'NEEDS_CONFIRMATION', 'HOLD'], description: 'FAST_TRACK=可快速排期，READY=可排期，NEEDS_CONFIRMATION=补充信息后排期，HOLD=暂不建议排期' },
+        advice: { type: 'string', description: '一句明确的排期建议，只写业务决策，不含技术实现' },
+      },
+      required: ['status', 'advice'],
+      additionalProperties: false,
+    },
     attention_points: {
       ...strArray,
-      description: '给需求提出人的注意事项与需关注的地方，2-5 条，不提问只提示（可选）',
+      description: '给需求提出人的注意事项，0-6 条；没有则空数组。每条一句，业务语言，不含代码或技术实现。',
+    },
+    questions: {
+      ...strArray,
+      description: '阻断性澄清问题：仅当需求缺少推进评估所必需的信息（范围/对象/验收标准等）时填写，最多 3 个、只问最关键的，流程会挂起等需求发起人补充后重新评估；需求中「【已澄清结论·视为既定事实】」的问答不得重复提问；confidence ≥ 0.8 或信息足够时必须为空数组。',
+    },
+    confidence: {
+      type: 'number',
+      minimum: 0,
+      maximum: 1,
+      description: '自评置信度 0-1：对本次评估结论的把握程度（信息越完整越高）。≥0.8 表示信息已足够、questions 必须为空。',
     },
     effort: {
       type: 'object',
@@ -69,7 +90,7 @@ const EVALUATE = {
       additionalProperties: false,
     },
   },
-  required: ['level', 'rationality', 'effort', 'impact_scope', 'risks', 'suggested_test_focus', 'perspectives'],
+  required: ['level', 'rationality', 'summary', 'scheduling', 'effort', 'attention_points', 'questions', 'confidence', 'impact_scope', 'risks', 'suggested_test_focus', 'perspectives'],
   additionalProperties: false,
 };
 

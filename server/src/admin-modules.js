@@ -14,29 +14,31 @@ const LIST_COLS = `id, gitlab_project_id, gitlab_project_path, branch, sub_path,
   sync_status, last_synced_at, commit_sha, file_count, error_msg, created_at`;
 
 /** 列表 */
-router.get('/modules', (req, res) => {
-  const rows = db.prepare(`SELECT ${LIST_COLS} FROM code_modules ORDER BY id`).all();
+router.get('/modules', async (req, res) => {
+  const rows = await db.many(`SELECT ${LIST_COLS} FROM code_modules ORDER BY id`, []);
   res.json(rows);
 });
 
 /** 详情 */
-router.get('/modules/:id', (req, res) => {
-  const m = db.prepare('SELECT * FROM code_modules WHERE id=?').get(req.params.id);
+router.get('/modules/:id', async (req, res) => {
+  const m = await db.one('SELECT * FROM code_modules WHERE id=?', [req.params.id]);
   if (!m) return res.status(404).json({ error: '仓库不存在' });
   res.json(m);
 });
 
 /** 新增：从 GitLab 项目下拉选 → 同步；path 前端可改，branch 恒 master */
-router.post('/modules', (req, res) => {
+router.post('/modules', async (req, res) => {
   const { gitlab_project_id, gitlab_project_path, sub_path } = req.body || {};
   if (!gitlab_project_id) return res.status(400).json({ error: '请选择 GitLab 项目' });
   try { gitlab.assertSafeRelPath(sub_path || '', 'sub_path'); } catch (e) {
     return res.status(400).json({ error: e.message });
   }
   try {
-    const r = db.prepare(`INSERT INTO code_modules(gitlab_project_id, gitlab_project_path, branch, sub_path)
-      VALUES(?, ?, 'master', ?)`)
-      .run(String(gitlab_project_id), gitlab_project_path || '', sub_path || '');
+    const r = await db.execute(
+      `INSERT INTO code_modules(gitlab_project_id, gitlab_project_path, branch, sub_path)
+        VALUES(?, ?, 'master', ?)`,
+      [String(gitlab_project_id), gitlab_project_path || '', sub_path || '']
+    );
     res.json({ id: r.lastInsertRowid });
   } catch (e) {
     // 精确判断 UNIQUE 冲突：SQLite 是 "UNIQUE constraint failed: code_modules.<col>"
@@ -48,8 +50,8 @@ router.post('/modules', (req, res) => {
 });
 
 /** 编辑：仅允许改 sub_path（branch 强制 master 不允许改） */
-router.put('/modules/:id', (req, res) => {
-  const m = db.prepare('SELECT * FROM code_modules WHERE id=?').get(req.params.id);
+router.put('/modules/:id', async (req, res) => {
+  const m = await db.one('SELECT * FROM code_modules WHERE id=?', [req.params.id]);
   if (!m) return res.status(404).json({ error: '仓库不存在' });
   const { sub_path } = req.body || {};
   let nextSub = m.sub_path;
@@ -59,17 +61,20 @@ router.put('/modules/:id', (req, res) => {
     }
     nextSub = sub_path;
   }
-  db.prepare(`UPDATE code_modules SET sub_path=? WHERE id=?`).run(nextSub, m.id);
+  await db.execute(`UPDATE code_modules SET sub_path=? WHERE id=?`, [nextSub, m.id]);
   res.json({ ok: true });
 });
 
-router.delete('/modules/:id', (req, res) => {
-  const m = db.prepare('SELECT * FROM code_modules WHERE id=?').get(req.params.id);
+router.delete('/modules/:id', async (req, res) => {
+  const m = await db.one('SELECT * FROM code_modules WHERE id=?', [req.params.id]);
   if (!m) return res.status(404).json({ error: '仓库不存在' });
   // 检查是否有业务模块挂载：有则拒（保护）
-  const linked = db.prepare('SELECT COUNT(*) c FROM business_module_codes WHERE code_module_id=?').get(m.id).c;
+  const linked = (await db.one(
+    'SELECT COUNT(*) c FROM business_module_codes WHERE code_module_id=?',
+    [m.id]
+  )).c;
   if (linked > 0) return res.status(400).json({ error: `该仓库被 ${linked} 个业务模块挂载，请先解绑` });
-  db.prepare('DELETE FROM code_modules WHERE id=?').run(m.id);
+  await db.execute('DELETE FROM code_modules WHERE id=?', [m.id]);
   res.json({ ok: true });
 });
 
@@ -78,8 +83,8 @@ router.post('/modules/:id/sync', async (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-router.get('/modules/:id/tree', (req, res) => {
-  const m = db.prepare('SELECT * FROM code_modules WHERE id=?').get(req.params.id);
+router.get('/modules/:id/tree', async (req, res) => {
+  const m = await db.one('SELECT * FROM code_modules WHERE id=?', [req.params.id]);
   if (!m) return res.status(404).json({ error: '仓库不存在' });
   const dirKey = String(m.gitlab_project_id).replace(/[^A-Za-z0-9._-]/g, '_');
   const dir = gitlab.moduleRoot(gitlab.REPOS_DIR, dirKey);

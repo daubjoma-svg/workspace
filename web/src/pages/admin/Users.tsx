@@ -7,7 +7,45 @@ import { ConfirmModal } from '../../components/ConfirmModal';
 
 const ROLE_OPTS = Object.entries(ROLE_NAME);
 
-/** 人员管理：顶部「+ 新增成员」按钮 + 弹窗；列表角色下拉 + 飞书账号维护 + 删除（二次确认） */
+/** 管理员集中维护的产品 Jira 创建默认值，字段 ID 由所选项目的元数据提供。 */
+const JIRA_DEFAULT_FIELD_NAMES = ['平台子业务线', '涉及的研发端', '归属BU'];
+const DEFAULT_JIRA_BASE_URL = 'https://jira.fenbeijinfu.com';
+type JiraDefaultField = {
+  id: string;
+  name: string;
+  allowed_values?: { id: string; value: string }[];
+};
+
+type JiraEditProfile = {
+  base_url: string;
+  username: string;
+  token_configured: boolean;
+  field_defaults?: Record<string, string | string[]>;
+  project_key: string;
+  issue_type: string;
+  sync?: {
+    project_candidates?: { key: string; name: string }[];
+    issue_type?: string;
+    create_fields?: JiraDefaultField[];
+  } | null;
+};
+
+type UserEditForm = {
+  name: string;
+  role: string;
+  feishu_key: string;
+  password: string;
+  jira_base_url: string;
+  jira_username: string;
+  jira_token: string;
+  jira_project_key: string;
+  jira_issue_type: string;
+  jira_project_candidates: { key: string; name: string }[];
+  /** 保存整份默认值映射，避免只编辑三个字段时清空产品配置的其他字段。 */
+  jira_field_defaults: Record<string, string | string[]>;
+};
+
+/** 人员管理：成员新增、角色/飞书/Jira 配置维护与删除。 */
 export default function Users() {
   const { toast } = useApp();
   const [users, setUsers] = useState<User[]>([]);
@@ -15,14 +53,17 @@ export default function Users() {
   /** 统一删除确认弹窗 */
   const [delUser, setDelUser] = useState<{ id: number; name: string } | null>(null);
   const [form, setForm] = useState({ username: '', password: '', name: '', role: 'CSM', feishu_key: '' });
-  /** 行内飞书编辑态：key=用户 id；null 表示未在编辑 */
-  const [editingFs, setEditingFs] = useState<number | null>(null);
-  const [fsDraft, setFsDraft] = useState('');
-  /** 改密码弹窗 */
-  const [pwUser, setPwUser] = useState<{ id: number; name: string } | null>(null);
-  const [pwNew, setPwNew] = useState('');
-  /** 各用户口令回显：id -> {viewable,password}；viewable=false 表示存量 bcrypt 不可回显 */
-  const [pwMap, setPwMap] = useState<Record<number, { viewable: boolean; password: string }>>({});
+  /** 统一编辑弹窗：姓名、角色、飞书、密码及产品 Jira 配置都在此维护。 */
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState<UserEditForm | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState<{ visible: boolean; loading: boolean; loaded: boolean; value: string } | null>(null);
+  const [jiraProfileLoaded, setJiraProfileLoaded] = useState(false);
+  const [jiraTokenConfigured, setJiraTokenConfigured] = useState(false);
+  const [jiraDefaultFields, setJiraDefaultFields] = useState<JiraDefaultField[]>([]);
+  const [jiraDefaultsLoading, setJiraDefaultsLoading] = useState(false);
+  const [jiraDefaultsError, setJiraDefaultsError] = useState('');
   /** 角色 tab 切换（默认全部） */
   const [roleTab, setRoleTab] = useState<string>('ALL');
   // 按 tab 过滤后的用户列表
@@ -32,50 +73,144 @@ export default function Users() {
 
   const load = () => api.get('/api/users').then((list: User[]) => {
     setUsers(list);
-    // 管理员后台：并行拉取各用户口令用于回显（可逆加密可查看；存量 bcrypt 标记不可回显）
-    Promise.all(list.map((u) =>
-      api.get(`/api/admin/users/${u.id}/password`).then((r) => [u.id, r] as const).catch(() => null)
-    )).then((entries) => {
-      const m: Record<number, { viewable: boolean; password: string }> = {};
-      entries.forEach((e) => { if (e) m[e[0]] = e[1]; });
-      setPwMap(m);
-    });
   });
   useEffect(() => { load(); }, []);
 
+  const editProjectKey = editForm?.jira_project_key || '';
+  const editIssueType = editForm?.jira_issue_type || '';
+  // 项目切换后重新读取字段，避免把其他项目的选项用于当前产品；关闭弹窗后忽略未完成请求。
+  useEffect(() => {
+    if (!editUser || editUser.role !== 'PO' || !jiraProfileLoaded || !jiraTokenConfigured || !editProjectKey) return;
+    let cancelled = false;
+    setJiraDefaultsLoading(true);
+    setJiraDefaultsError('');
+    setJiraDefaultFields([]);
+    const query = new URLSearchParams({ project_key: editProjectKey, issue_type: editIssueType });
+    api.get(`/api/admin/users/${editUser.id}/jira-default-fields?${query}`)
+      .then((raw: any) => { if (!cancelled) setJiraDefaultFields(raw?.data || raw); })
+      .catch((e: any) => { if (!cancelled) setJiraDefaultsError(e.message || 'Jira 默认字段读取失败'); })
+      .finally(() => { if (!cancelled) setJiraDefaultsLoading(false); });
+    return () => { cancelled = true; };
+  }, [editUser?.id, editUser?.role, jiraProfileLoaded, jiraTokenConfigured, editProjectKey, editIssueType]);
+
+  const openAdd = () => {
+    // 在产品角色筛选页新增时沿用当前上下文，减少重复选择。
+    setForm({ username: '', password: '', name: '', role: roleTab === 'PO' ? 'PO' : 'CSM', feishu_key: '' });
+    setAdding(true);
+  };
   const add = async () => {
     if (!form.username.trim() || !form.password || !form.name.trim()) return toast('请填写完整');
     try {
       await api.post('/api/admin/users', { ...form, username: form.username.trim(), name: form.name.trim() });
       setForm({ username: '', password: '', name: '', role: 'CSM', feishu_key: '' });
       setAdding(false);
-      load(); toast('已添加');
+      // Jira 账号由产品本人在需求详情中配置，管理员新增成员后不代配其他角色账号。
+      load(); toast(form.role === 'PO' ? '产品成员已添加，请由该产品账号自行配置 Jira' : '已添加');
     } catch (e: any) { toast(e.message); }
   };
   const del = async (id: number, name: string) => {
     try { await api.del(`/api/admin/users/${id}`); setDelUser(null); load(); toast('已删除'); } catch (e: any) { toast(e.message); }
   };
-  const setRole = async (id: number, role: string) => {
-    try { await api.put(`/api/admin/users/${id}`, { role }); load(); toast('角色已更新'); }
-    catch (e: any) { toast(e.message); }
+  /** 打开统一编辑弹窗；产品行额外读取 Jira 配置，其他角色不请求 Jira 凭据。 */
+  const openEdit = (u: User) => {
+    setEditUser(u);
+    setEditForm({ name: u.name, role: u.role, feishu_key: u.feishu_key || '', password: '', jira_base_url: '', jira_username: '', jira_token: '', jira_project_key: '', jira_issue_type: '', jira_project_candidates: [], jira_field_defaults: {} });
+    setJiraDefaultFields([]);
+    setJiraDefaultsLoading(false);
+    setJiraDefaultsError('');
+    setCurrentPassword(null);
+    setJiraTokenConfigured(false);
+    setJiraProfileLoaded(u.role !== 'PO');
+    if (u.role !== 'PO') return;
+    setEditLoading(true);
+    api.get(`/api/admin/users/${u.id}/jira-profile`)
+      .then((raw: any) => {
+        const profile: JiraEditProfile = raw?.data || raw;
+        setEditForm((prev) => prev ? {
+          ...prev,
+          jira_base_url: DEFAULT_JIRA_BASE_URL,
+          jira_username: profile.username || '',
+          jira_project_key: profile.project_key || '',
+          jira_issue_type: profile.issue_type || '',
+          jira_project_candidates: profile.sync?.project_candidates || [],
+          jira_field_defaults: profile.field_defaults || {},
+        } : prev);
+        setJiraDefaultFields((profile.sync?.create_fields || []).filter((field) => JIRA_DEFAULT_FIELD_NAMES.includes(field.name)));
+        setJiraTokenConfigured(!!profile.token_configured);
+        setJiraProfileLoaded(true);
+      })
+      .catch((e: any) => toast(e.message || 'Jira 配置读取失败', 'error'))
+      .finally(() => setEditLoading(false));
   };
-  /** 保存密码（ADMIN 重置任意用户密码） */
-  const savePw = async () => {
-    if (!pwUser) return;
-    if (!pwNew || pwNew.length < 6) return toast('新密码至少 6 位', 'error');
-    try {
-      await api.put(`/api/admin/users/${pwUser.id}`, { password: pwNew });
-      toast(`${pwUser.name} 的密码已重置`,'ok');
-      setPwUser(null); setPwNew('');
-    } catch (e: any) { toast(e.message,'error'); }
+
+  /** 留空清除当前字段，其余 Jira 默认值原样保留。 */
+  const setJiraDefault = (fieldId: string, value: string) => {
+    setEditForm((prev) => {
+      if (!prev) return prev;
+      const defaults = { ...prev.jira_field_defaults };
+      if (value.trim()) defaults[fieldId] = value;
+      else delete defaults[fieldId];
+      return { ...prev, jira_field_defaults: defaults };
+    });
   };
-  /** 保存飞书账号（可清空） */
-  const saveFeishu = async (id: number) => {
+
+  /** 管理员按需查看当前密码；不可逆历史密码提示通过重置修改。 */
+  const toggleCurrentPassword = async () => {
+    if (!editUser) return;
+    if (currentPassword?.visible) {
+      setCurrentPassword((prev) => prev ? { ...prev, visible: false } : prev);
+      return;
+    }
+    if (currentPassword?.loaded) {
+      if (!currentPassword.value) return toast('该账号密码为历史不可逆存储，请通过新密码修改', 'error');
+      setCurrentPassword((prev) => prev ? { ...prev, visible: true } : prev);
+      return;
+    }
+    setCurrentPassword({ visible: false, loading: true, loaded: false, value: '' });
     try {
-      await api.put(`/api/admin/users/${id}`, { feishu_key: fsDraft.trim() });
-      setEditingFs(null); load();
-      toast(fsDraft.trim() ? '飞书账号已绑定' : '飞书账号已清空');
-    } catch (e: any) { toast(e.message); }
+      const raw: any = await api.get(`/api/admin/users/${editUser.id}/password`);
+      const result = raw?.data || raw;
+      if (!result?.viewable) {
+        setCurrentPassword({ visible: false, loading: false, loaded: true, value: '' });
+        return toast('该账号密码为历史不可逆存储，请通过新密码修改', 'error');
+      }
+      setCurrentPassword({ visible: true, loading: false, loaded: true, value: result.password || '' });
+    } catch (e: any) {
+      setCurrentPassword(null);
+      toast(e.message || '密码查看失败', 'error');
+    }
+  };
+
+  /** 保存统一编辑内容；Jira 仅对产品目标账号写入。 */
+  const saveEdit = async () => {
+    if (!editUser || !editForm) return;
+    if (!editForm.name.trim()) return toast('姓名不能为空', 'error');
+    if (editForm.password && editForm.password.length < 6) return toast('新密码至少 6 位', 'error');
+    if (editForm.role === 'PO' && !jiraProfileLoaded) return toast('Jira 配置仍在加载，请稍候', 'error');
+    setEditSaving(true);
+    try {
+      await api.put(`/api/admin/users/${editUser.id}`, {
+        name: editForm.name.trim(),
+        role: editForm.role,
+        feishu_key: editForm.feishu_key.trim(),
+        ...(editForm.password ? { password: editForm.password } : {}),
+      });
+      if (editForm.role === 'PO') {
+        const raw: any = await api.put(`/api/admin/users/${editUser.id}/jira-profile`, {
+          base_url: editForm.jira_base_url.trim(),
+          username: editForm.jira_username.trim(),
+          api_token: editForm.jira_token || (jiraTokenConfigured ? '__KEEP__' : ''),
+          project_key: editForm.jira_project_key.trim(),
+          issue_type: editForm.jira_issue_type.trim(),
+          field_defaults: editForm.jira_field_defaults,
+        });
+        const saved = raw?.data || raw;
+        if (saved?.sync_error) toast(`成员已保存，但 Jira 同步失败：${saved.sync_error}`, 'error');
+      }
+      setEditUser(null); setEditForm(null); load();
+      if (editForm.role !== 'PO' || !editForm.jira_token) toast('成员信息已保存', 'ok');
+    } catch (e: any) { toast(e.message || '保存失败', 'error'); }
+    finally { setEditSaving(false); }
   };
 
   return (
@@ -85,7 +220,7 @@ export default function Users() {
           <div className="crumb">管理后台</div>
           <h1>人员管理</h1>
         </div>
-        <button className="btn btn-primary" onClick={() => setAdding(true)}>
+        <button className="btn btn-primary" onClick={openAdd}>
           <Icon name="plus" size={20} /> 新增成员
         </button>
       </div>
@@ -96,7 +231,8 @@ export default function Users() {
           { k: 'ALL', label: '全部' },
           { k: 'CSM', label: '需求发起人' },
           { k: 'PO', label: '产品' },
-          { k: 'RD', label: '研发' },
+          { k: 'RD', label: '后端' },
+          { k: 'FE', label: '前端' },
           { k: 'QA', label: '测试' },
           { k: 'ADMIN', label: '管理员' },
         ].map((t1) => (
@@ -110,63 +246,43 @@ export default function Users() {
 
       <div className="card tbl-wrap">
         <table className="tbl">
-          <thead><tr><th>ID</th><th>用户名</th><th>姓名</th><th>角色</th><th>飞书账号</th><th>密码</th><th>操作</th></tr></thead>
+          <thead><tr><th>ID</th><th>用户名</th><th>姓名</th><th>角色</th><th>飞书账号</th><th>密码</th><th>Jira 账号</th><th>操作</th></tr></thead>
           <tbody>
             {filteredUsers.map((u) => (
               <tr key={u.id}>
                 <td className="muted">{u.id}</td><td>{u.username}</td><td>{u.name}</td>
                 <td>
-                  <SearchSelect
-                    options={ROLE_OPTS.map(([k, v]) => ({ value: k, label: v }))}
-                    value={u.role}
-                    onChange={(v) => setRole(u.id, String(v))}
-                    width={110}
-                  />
+                  <span className="tag tag-grey">{ROLE_NAME[u.role] || u.role}</span>
                 </td>
                 <td>
-                  {editingFs === u.id ? (
-                    <span className="row" style={{ gap: 6 }}>
-                      <input className="input" style={{ width: 180 }} value={fsDraft}
-                        placeholder="user_id 或邮箱"
-                        onChange={(e) => setFsDraft(e.target.value)}
-                        autoFocus
-                        onKeyDown={(e) => { if (e.key === 'Enter') saveFeishu(u.id); if (e.key === 'Escape') setEditingFs(null); }} />
-                      <button className="btn btn-sm btn-primary" onClick={() => saveFeishu(u.id)}>保存</button>
-                      <button className="btn btn-sm" onClick={() => setEditingFs(null)}>取消</button>
-                    </span>
-                  ) : (
-                    <span className="row" style={{ gap: 6 }}>
-                      {u.feishu_key
-                        ? <span className="tag tag-green" title={u.feishu_key}>{u.feishu_key.length > 18 ? u.feishu_key.slice(0, 18) + '…' : u.feishu_key}</span>
-                        : <span className="tag tag-grey">未绑定</span>}
-                      <button className="btn btn-sm btn-icon" aria-label="编辑飞书账号"
-                        onClick={() => { setEditingFs(u.id); setFsDraft(u.feishu_key || ''); }}>
-                        <Icon name="edit" size={16} />
-                      </button>
-                    </span>
-                  )}
+                  {u.feishu_key
+                    ? <span className="tag tag-green" title={u.feishu_key}>{u.feishu_key.length > 18 ? u.feishu_key.slice(0, 18) + '…' : u.feishu_key}</span>
+                    : <span className="tag tag-grey">未绑定</span>}
+                </td>
+                <td>
+                  <span className={u.password_configured ? 'tag tag-green' : 'tag tag-grey'} title="密码默认掩码显示">{u.password_configured ? '••••••' : '未设置'}</span>
+                </td>
+                <td>
+                  {u.role === 'PO'
+                    ? (u.jira_configured
+                      ? <span className="tag tag-green" title="该产品已配置 Jira 账号">已配置{u.jira_username ? ` · ${u.jira_username}` : ''}</span>
+                      : <span className="tag tag-grey" title="请由该产品账号自行配置 Jira">未配置</span>)
+                    : <span className="tag tag-grey" title="仅产品角色需要配置 Jira">不适用</span>}
                 </td>
                 <td>
                   <span className="row" style={{ gap: 6 }}>
-                    {/* 口令可逆加密存储，管理员可直接查看；存量 bcrypt 不可回显，重置后可查看 */}
-                    {pwMap[u.id]?.viewable
-                      ? <span className="tag tag-green" title="口令以 AES-256-GCM 可逆加密存储，仅管理员可见">{pwMap[u.id].password.length > 18 ? pwMap[u.id].password.slice(0, 18) + '…' : pwMap[u.id].password}</span>
-                      : <span className="tag tag-grey" title="旧版加密存储不可回显，点铅笔重置一次后即可查看">不可回显</span>}
-                    <button className="btn btn-sm btn-icon" aria-label="重置密码"
-                      disabled={u.role === 'ADMIN'}
-                      title={u.role === 'ADMIN' ? '管理员账号不允许修改密码' : '重置密码'}
-                      onClick={() => { setPwUser({ id: u.id, name: u.name }); setPwNew(''); }}>
+                    <button className="btn btn-sm btn-icon" title="编辑成员" aria-label={`编辑 ${u.name}`} onClick={() => openEdit(u)}>
                       <Icon name="edit" size={16} />
                     </button>
+                    <button className="btn btn-sm btn-danger" disabled={u.role === 'ADMIN'}
+                      title={u.role === 'ADMIN' ? '管理员账号不允许删除' : '删除成员'}
+                      onClick={() => setDelUser({ id: u.id, name: u.name })}>删除</button>
                   </span>
-                </td>
-                <td>
-                  <button className="btn btn-sm btn-danger" onClick={() => setDelUser({ id: u.id, name: u.name })}>删除</button>
                 </td>
               </tr>
             ))}
             {filteredUsers.length === 0 && (
-              <tr><td colSpan={7} className="empty" style={{ padding: '40px 10px' }}>暂无成员，点右上角「新增成员」添加</td></tr>
+              <tr><td colSpan={8} className="empty" style={{ padding: '40px 10px' }}>暂无成员，点右上角「新增成员」添加</td></tr>
             )}
           </tbody>
         </table>
@@ -211,7 +327,6 @@ export default function Users() {
           </div>
         </div>
       )}
-
       {/* 统一删除确认弹窗 */}
       {delUser && (
         <ConfirmModal
@@ -224,28 +339,93 @@ export default function Users() {
         />
       )}
 
-      {/* 改密码弹窗 */}
-      {pwUser && (
-        <div className="modal-mask" onClick={() => setPwUser(null)}>
-          <div className="modal card" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-h row">
-              <Icon name="key" size={20} />
-              <span>重置密码：{pwUser.name}</span>
-              <button className="btn btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setPwUser(null)}>关闭</button>
+      {/* 统一编辑弹窗：集中维护成员基础信息与产品 Jira 配置。 */}
+      {editUser && editForm && (
+        <div className="modal-mask" onClick={() => { setEditUser(null); setEditForm(null); }}>
+          <div className="modal card user-edit-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-h">
+              <span><Icon name="edit" size={17} /> 编辑成员：{editUser.name}</span>
+              <button className="btn btn-sm btn-icon" onClick={() => { setEditUser(null); setEditForm(null); }} aria-label="关闭"><Icon name="close" size={16} /></button>
             </div>
-            <div className="modal-b" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div className="form-row" style={{ marginBottom: 0 }}>
-                <label>新密码（≥ 6 位）</label>
-                <input className="input" type="password" value={pwNew} autoFocus
-                  onChange={(e) => setPwNew(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') savePw(); }}
-                  placeholder="新密码" />
-              </div>
-              <div className="muted" style={{ fontSize: 12 }}>该操作将立即生效，对方需要用新密码重新登录。保存后可在列表中查看密码，输错可随时再改。</div>
-              <div className="row" style={{ marginTop: 6, gap: 8 }}>
-                <button className="btn btn-primary" onClick={savePw}>保存</button>
-                <button className="btn" onClick={() => setPwUser(null)}>取消</button>
-              </div>
+            <div className="modal-b">
+              {editLoading ? <div className="empty">正在读取 Jira 配置…</div> : <>
+                <div className="grid2">
+                  <div className="form-row"><label>姓名 *</label>
+                    <input className="input" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} autoFocus /></div>
+                  <div className="form-row"><label>角色 *</label>
+                    <SearchSelect options={ROLE_OPTS.map(([k, v]) => ({ value: k, label: v }))} value={editForm.role}
+                      onChange={(v) => setEditForm({ ...editForm, role: String(v) })} placeholder="选择角色" /></div>
+                  <div className="form-row" style={{ gridColumn: '1 / -1' }}><label>飞书账号（选填）</label>
+                    <input className="input" value={editForm.feishu_key} onChange={(e) => setEditForm({ ...editForm, feishu_key: e.target.value })} placeholder="飞书 user_id 或邮箱" /></div>
+                  <div className="form-row"><label>当前密码</label>
+                    <span className="row" style={{ gap: 8 }}>
+                      <button type="button" className="btn btn-sm btn-icon" onClick={() => void toggleCurrentPassword()} disabled={currentPassword?.loading || !editUser.password_configured}
+                        title={currentPassword?.visible ? '隐藏密码' : '查看密码'} aria-label={currentPassword?.visible ? '隐藏密码' : '查看密码'}>
+                        <Icon name={currentPassword?.visible ? 'eye-off' : 'eye'} size={16} />
+                      </button>
+                      <span className="tag tag-green">{currentPassword?.visible ? currentPassword.value : (editUser.password_configured ? '••••••' : '未设置')}</span>
+                    </span>
+                  </div>
+                  <div className="form-row"><label>新密码（留空不修改）</label>
+                    <input className="input" type="password" value={editForm.password} onChange={(e) => setEditForm({ ...editForm, password: e.target.value })} placeholder="至少 6 位" /></div>
+                </div>
+
+                {editForm.role === 'PO' && <>
+                  <section className="user-edit-section" aria-label="Jira 配置">
+                    <div className="section-title">Jira 配置</div>
+                    <div className="user-edit-grid">
+                      <div className="form-row user-edit-wide"><label>Jira 地址</label>
+                        <input className="input" value={DEFAULT_JIRA_BASE_URL} readOnly /></div>
+                      <div className="form-row"><label>Jira 账号</label>
+                        <input className="input" value={editForm.jira_username} onChange={(e) => setEditForm({ ...editForm, jira_username: e.target.value })} placeholder="登录账号或邮箱" /></div>
+                      <div className="form-row"><label>Jira 密码 / Token</label>
+                        <input className="input" type="password" value={editForm.jira_token} onChange={(e) => setEditForm({ ...editForm, jira_token: e.target.value })} placeholder={jiraTokenConfigured ? '已配置，留空保持不变' : '请输入 Jira 密码或 API Token'} /></div>
+                    </div>
+                  </section>
+                  <section className="user-edit-section" aria-label="Jira 创建默认值">
+                    <div className="section-title">创建默认值</div>
+                    <div className="user-edit-grid">
+                      <div className="form-row user-edit-wide"><label>默认项目</label>
+                        <SearchSelect
+                          options={editForm.jira_project_candidates.map((p) => ({ value: p.key, label: p.name ? `${p.name}（${p.key}）` : p.key }))}
+                          value={editForm.jira_project_key}
+                          onChange={(v) => setEditForm({ ...editForm, jira_project_key: String(v) })}
+                          placeholder="选择默认项目"
+                          emptyText="暂无可创建项目"
+                        />
+                      </div>
+                    </div>
+                    {jiraDefaultsError && <div className="hint" role="alert">{jiraDefaultsError}</div>}
+                    <div className="user-edit-default-grid">
+                    {JIRA_DEFAULT_FIELD_NAMES.map((name) => {
+                    const field = jiraDefaultFields.find((f) => f.name === name);
+                    const value = field ? editForm.jira_field_defaults[field.id] : '';
+                    const selected = Array.isArray(value) ? value.join(', ') : value || '';
+                    const options = field?.allowed_values || [];
+                    return <div className="form-row" key={name}>
+                      <label id={`jira-default-${name}`}>{name}</label>
+                      <div aria-labelledby={`jira-default-${name}`} role="group">
+                        {options.length ? <SearchSelect
+                          options={[{ value: '', label: '不设默认值' }, ...options.map((o) => ({ value: o.value, label: o.value }))]}
+                          value={selected}
+                          onChange={(v) => field && setJiraDefault(field.id, String(v))}
+                          disabled={jiraDefaultsLoading || editSaving}
+                          placeholder="选择默认值"
+                        /> : <input className="input" aria-label={name} value={selected}
+                          disabled={!field || jiraDefaultsLoading || editSaving}
+                          onChange={(e) => field && setJiraDefault(field.id, e.target.value)}
+                          placeholder={jiraDefaultsLoading ? '正在读取选项…' : field ? '留空不设默认值' : '该项目暂无此字段，请先保存 Jira 账号配置'} />}
+                      </div>
+                    </div>;
+                    })}
+                    </div>
+                  </section>
+                </>}
+              </>}
+            </div>
+            <div className="modal-f">
+              <button className="btn" onClick={() => { setEditUser(null); setEditForm(null); }} disabled={editSaving}>取消</button>
+              <button className="btn btn-primary" onClick={() => void saveEdit()} disabled={editLoading || editSaving}>{editSaving ? '保存中…' : '保存'}</button>
             </div>
           </div>
         </div>

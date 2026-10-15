@@ -29,16 +29,15 @@ export interface ArtifactMeta {
   code_basis: CodeBasis | null;
 }
 
-/** 安全解析 artifact.meta（JSON 字符串）。字段缺失/非法 JSON/整列不存在 → 返回 null。 */
-export function parseArtifactMeta(raw: string | null | undefined): ArtifactMeta | null {
-  if (!raw || typeof raw !== 'string') return null;
-  try {
-    const obj = JSON.parse(raw);
-    if (!obj || typeof obj !== 'object') return null;
-    return obj as ArtifactMeta;
-  } catch {
-    return null;
+/** 安全解析 artifact.meta。MySQL JSON 列由 mysql2 直接返回对象，历史/兼容场景也可能是 JSON 字符串；非法值 → null。 */
+export function parseArtifactMeta(raw: unknown): ArtifactMeta | null {
+  if (!raw) return null;
+  let obj: any = raw;
+  if (typeof raw === 'string') {
+    try { obj = JSON.parse(raw); } catch { return null; }
   }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  return obj as ArtifactMeta;
 }
 
 export type WarnKind = 'mock' | 'degraded' | null;

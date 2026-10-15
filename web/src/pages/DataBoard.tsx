@@ -173,7 +173,7 @@ export default function DataBoard({ onOpen }: { onOpen: (id: number) => void }) 
         <div className="row" style={{ gap: 8 }}>
           {user?.role === 'ADMIN' && (
             <div className="row" style={{ gap: 4 }}>
-              {(['CSM', 'PO', 'RD', 'QA'] as const).map((r) => (
+              {(['CSM', 'PO', 'RD', 'FE', 'QA'] as const).map((r) => (
                 <button key={r} className={'btn btn-sm ' + (viewRole === r ? 'btn-primary' : '')} onClick={() => setViewRole(r)}>{roleLabel(r)}</button>
               ))}
             </div>

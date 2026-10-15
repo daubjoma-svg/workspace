@@ -74,17 +74,27 @@ const INSERT_SQL = `INSERT INTO ai_tasks
  * 记录一次 AI 调用。落库失败绝不能把 AI 节点带崩——可观测性是旁路，不是主链路。
  * @returns {number|null} ai_tasks.id
  */
-function recordAiTask({ requirementId, nodeId = null, action, meta }) {
+async function recordAiTask({ requirementId, nodeId = null, action, meta }) {
   const n = normalize(meta);
   try {
-    const r = db.prepare(INSERT_SQL).run(
-      requirementId ?? null, nodeId, action,
-      n.provider_id, n.provider_type, n.model, n.structured_level, n.status,
-      n.degraded_reason, n.is_mock ? 1 : 0, n.latency_ms, n.attempt,
-      n.prompt_tokens, n.completion_tokens,
+    const r = await db.execute(INSERT_SQL, [
+      requirementId ?? null,
+      nodeId,
+      action,
+      n.provider_id,
+      n.provider_type,
+      n.model,
+      n.structured_level,
+      n.status,
+      n.degraded_reason,
+      n.is_mock ? 1 : 0,
+      n.latency_ms,
+      n.attempt,
+      n.prompt_tokens,
+      n.completion_tokens,
       n.code_files_used.length ? JSON.stringify(n.code_files_used) : null,
-      n.code_basis ? JSON.stringify(n.code_basis) : null,
-    );
+      n.code_basis ? JSON.stringify(n.code_basis) : null
+    ]);
     if (n.status !== STATUS.OK) {
       logger.warn('ai_task_degraded', {
         requirement_id: requirementId, action, status: n.status,
@@ -132,16 +142,18 @@ function toPublic(row) {
 const VALID_STATUS = new Set(Object.values(STATUS));
 
 /** 分页查询。requirement_id / status 为可选过滤条件，非法值直接忽略而不是报错 */
-function listAiTasks({ requirementId, status, limit, offset }) {
+async function listAiTasks({ requirementId, status, limit, offset }) {
   const where = [];
   const args = [];
   const rid = Number.parseInt(requirementId, 10);
   if (Number.isInteger(rid) && rid > 0) { where.push('requirement_id=?'); args.push(rid); }
   if (VALID_STATUS.has(status)) { where.push('status=?'); args.push(status); }
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const total = db.prepare(`SELECT COUNT(*) n FROM ai_tasks ${clause}`).get(...args).n;
-  const rows = db.prepare(`SELECT * FROM ai_tasks ${clause} ORDER BY id DESC LIMIT ? OFFSET ?`)
-    .all(...args, limit, offset);
+  const total = (await db.one(`SELECT COUNT(*) n FROM ai_tasks ${clause}`, [...args])).n;
+  const rows = await db.many(
+    `SELECT * FROM ai_tasks ${clause} ORDER BY id DESC LIMIT ? OFFSET ?`,
+    [...args, limit, offset]
+  );
   return { items: rows.map(toPublic), total };
 }
 

@@ -17,8 +17,8 @@ const router = express.Router();
 /* ---------- 用户登录口令 ---------- */
 // 可逆密文 -> {viewable:true,password}；存量 bcrypt -> {viewable:false}（重置后可回显）。
 // 明文只进响应，不落日志。
-router.get('/users/:id/password', (req, res) => {
-  const u = db.prepare('SELECT id,password FROM users WHERE id=?').get(+req.params.id);
+router.get('/users/:id/password', async (req, res) => {
+  const u = await db.one('SELECT id,password FROM users WHERE id=?', [+req.params.id]);
   if (!u) return res.status(404).json({ error: '用户不存在' });
   const plain = password.view(u.password);
   res.json({ viewable: plain != null, password: plain || '' });
@@ -34,14 +34,14 @@ router.get('/ai-providers/:id/key', (req, res) => {
 
 /* ---------- GitLab Token ---------- */
 // getGitlabCfg() 已含解密逻辑；未配置 → {token:''}。明文只进响应，不落日志。
-router.get('/gitlab/token', (req, res) => {
-  res.json({ token: gitlab.getGitlabCfg().token || '' });
+router.get('/gitlab/token', async (req, res) => {
+  res.json({ token: (await gitlab.getGitlabCfg()).token || '' });
 });
 
 /* ---------- 飞书 app_secret ---------- */
 // getFeishuCfg() 已含解密逻辑；未配置 → {app_secret:''}。明文只进响应，不落日志。
-router.get('/settings/feishu/secret', (req, res) => {
-  res.json({ app_secret: feishu.getFeishuCfg().appSecret || '' });
+router.get('/settings/feishu/secret', async (req, res) => {
+  res.json({ app_secret: (await feishu.getFeishuCfg()).appSecret || '' });
 });
 
 module.exports = router;

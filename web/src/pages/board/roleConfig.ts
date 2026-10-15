@@ -25,7 +25,7 @@ export interface BoardCtx {
 }
 
 /** 角色中文标签 */
-export const roleLabel = (r: string) => ({ CSM: '需求发起人', PO: '产品', RD: '研发', QA: '测试' } as Record<string, string>)[r] || r;
+export const roleLabel = (r: string) => ({ CSM: '需求发起人', PO: '产品', RD: '后端', QA: '测试', FE: '前端' } as Record<string, string>)[r] || r;
 
 /** 按时间维度分桶（取需求创建时间）：今日 / 近7天 / 近30天 / 更早 */
 export function groupByTime(list: Requirement[]): Record<string, Requirement[]> {
@@ -149,6 +149,22 @@ export function roleCfg(role: string, openCreate: () => void): BoardCfg {
           { key: 'pending', label: '待处理', icon: 'todo', value: mine.filter(isPending).length, tone: 'warn', hint: '等待研发排期' },
           { ...flowing(mine), hint: '全流程进行' },
           { key: 'ai', label: 'AI 处理中', icon: 'ai', value: mine.filter(isAiRunning).length, hint: '生成提示词 / 用例' },
+          { key: 'shipped', label: '已上线', icon: 'shipped', value: mine.filter(isDone).length, tone: 'good', hint: '本月交付' },
+        ],
+        todo: todoAt('RD'),
+        active: ({ mine }) => mine.filter(isActive),
+      };
+
+    case 'FE':
+      return {
+        greet: '前端看板',
+        desc: 'AI 已将 PRD 拆分为前端提示词（组件 / 交互 / 接口对接），优先查看前端部分，完成即提测。',
+        todoSection: { label: '待你开发', icon: 'todo' },
+        activeSection: { label: '负责中的任务', icon: 'develop' },
+        stats: ({ mine }) => [
+          { key: 'pending', label: '待处理', icon: 'todo', value: mine.filter(isPending).length, tone: 'warn', hint: '等待前端排期' },
+          { ...flowing(mine), hint: '全流程进行' },
+          { key: 'ai', label: 'AI 处理中', icon: 'ai', value: mine.filter(isAiRunning).length, hint: '生成前端提示词 / 用例' },
           { key: 'shipped', label: '已上线', icon: 'shipped', value: mine.filter(isDone).length, tone: 'good', hint: '本月交付' },
         ],
         todo: todoAt('RD'),

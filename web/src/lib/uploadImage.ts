@@ -1,18 +1,13 @@
 /* 图片上传：POST /api/uploads { data: dataUrl } → { ok, url }
  *
  * 后端契约：成功返回 { ok: true, url: '/uploads/xxx.png' }。
- * url 为相对路径（/uploads/...）时需拼后端源：vite 开发代理只转发 /api，
- * /uploads 静态资源不走代理，故补 http://localhost:4000 前缀。
+ * url 为相对路径（/uploads/...）时直接使用当前页面源，避免局域网访问时指向访问者自己的 localhost。
  */
 import { api } from '../api';
-
-/** 上传产物静态源（后端地址；仅开发代理 /api，图片需直连后端） */
-const UPLOAD_ORIGIN = 'http://localhost:4000';
 
 /** 把后端返回的图片地址解析为可访问的绝对地址 */
 export function resolveUploadUrl(url: string): string {
   if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith('/')) return UPLOAD_ORIGIN + url;
   return url;
 }
 

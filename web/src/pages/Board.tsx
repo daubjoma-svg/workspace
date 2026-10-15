@@ -3,6 +3,7 @@ import { api, Requirement } from '../api';
 import { useApp } from '../App';
 import { Icon } from '../components/Icon';
 import { EmptyState } from '../components/EmptyState';
+import { SearchSelect } from '../components/SearchSelect';
 import { ReqCard } from './board/ReqCard';
 import { ReqCardCompact } from './board/ReqCardCompact';
 import { useNodeNames } from './board/nodeState';
@@ -56,10 +57,17 @@ function groupMine(mine: Requirement[], dim: BoardDim): { key: string; icon: str
 
 export default function Board({ onOpen, onCreate }: { onOpen: (id: number) => void; onCreate: () => void }) {
   const { user } = useApp();
+  // 系统管理员只查看全量流转，无需展示个人待办栏。
+  const showTodo = user?.role !== 'ADMIN';
   const [viewRole, setViewRole] = useState<string>(user?.role || 'RD');
   useEffect(() => { setViewRole(user?.role || 'RD'); }, [user?.role]);
 
   const [dim, setDim] = useState<BoardDim>('time');
+  const [jiraQuery, setJiraQuery] = useState('');
+  const [titleQuery, setTitleQuery] = useState('');
+  const [customerFilter, setCustomerFilter] = useState('');
+  const [personFilter, setPersonFilter] = useState('');
+  const [versionQuery, setVersionQuery] = useState('');
 
   const [advice, setAdvice] = useState<{ text: string; model: string | null; loading: boolean; cached_at?: string }>({ text: '', model: null, loading: false });
   const [showAdvice, setShowAdvice] = useState(false);  // 默认收起
@@ -117,8 +125,41 @@ export default function Board({ onOpen, onCreate }: { onOpen: (id: number) => vo
     }
   };
 
+  const customerOptions = useMemo(() => [...new Set(all.map((r) => r.customer_name).filter(Boolean) as string[])]
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    .map((name) => ({ value: name, label: name })), [all]);
+  const personOptions = useMemo(() => {
+    const fields: Array<[string, string]> = [['csm_name', '需求发起人'], ['po_name', '产品'], ['rd_name', '研发'], ['fe_name', '前端'], ['qa_name', '测试']];
+    return fields.flatMap(([field, role]) => [...new Set(all.map((r) => r[field as keyof Requirement]).filter(Boolean) as string[])]
+      .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+      .map((name) => ({ value: `${field}:${name}`, label: `${role}：${name}` })));
+  }, [all]);
+  const versionOptions = useMemo(() => [...new Set(all.map((r) => r.target_version).filter(Boolean) as string[])]
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    .map((version) => ({ value: version, label: version })), [all]);
+  /** 按看板筛选条件过滤需求，过滤后再交给角色配置计算待办和进行中分组。 */
+  const filterRequirements = (items: Requirement[]) => {
+    const jira = jiraQuery.trim().toLowerCase();
+    const title = titleQuery.trim().toLowerCase();
+    const version = versionQuery.trim().toLowerCase();
+    return items.filter((r) => {
+      if (jira && !`${r.jira_url || ''} ${r.req_no || ''}`.toLowerCase().includes(jira)) return false;
+      if (title && !String(r.title || '').toLowerCase().includes(title)) return false;
+      if (customerFilter && r.customer_name !== customerFilter) return false;
+      if (version && !String(r.target_version || '').toLowerCase().includes(version)) return false;
+      if (personFilter) {
+        const separator = personFilter.indexOf(':');
+        const field = personFilter.slice(0, separator);
+        const name = personFilter.slice(separator + 1);
+        if (String(r[field as keyof Requirement] || '') !== name) return false;
+      }
+      return true;
+    });
+  };
+  const filteredMine = useMemo(() => filterRequirements(mine), [mine, jiraQuery, titleQuery, customerFilter, personFilter, versionQuery]);
+  const filteredAll = useMemo(() => filterRequirements(all), [all, jiraQuery, titleQuery, customerFilter, personFilter, versionQuery]);
   const cfg = useMemo(() => roleCfg(user?.role || '', onCreate), [user?.role, onCreate]);
-  const ctx: BoardCtx = { user, mine, all, viewRole };
+  const ctx: BoardCtx = { user, mine: filteredMine, all: filteredAll, viewRole };
   const todo = useMemo(() => cfg.todo(ctx), [ctx, cfg]);
   const active = useMemo(() => cfg.active(ctx), [ctx, cfg]);
   const nodeMap = useNodeNames([...todo, ...active]);
@@ -130,6 +171,7 @@ export default function Board({ onOpen, onCreate }: { onOpen: (id: number) => vo
     CSM: '重点关注：客户开发进度、超时需求、上线反馈',
     PO: '重点关注：版本排期、需求工时饱和度、可合并的需求',
     RD: '重点关注：相似需求合并、技术风险点、阻塞依赖',
+    FE: '重点关注：前端改动范围、页面/交互依赖、前后端联调排期',
     QA: '重点关注：影响模块、回归范围、测试点',
   };
 
@@ -144,7 +186,7 @@ export default function Board({ onOpen, onCreate }: { onOpen: (id: number) => vo
         <div className="row" style={{ gap: 8 }}>
           {user?.role === 'ADMIN' && (
             <div className="row" style={{ gap: 4, marginRight: 8 }}>
-              {['CSM', 'PO', 'RD', 'QA'].map((r) => (
+              {['CSM', 'PO', 'RD', 'FE', 'QA'].map((r) => (
                 <button key={r} className={'btn btn-sm ' + (viewRole === r ? 'btn-primary' : '')} onClick={() => setViewRole(r)}>
                   {roleLabel(r)}
                 </button>
@@ -211,29 +253,50 @@ export default function Board({ onOpen, onCreate }: { onOpen: (id: number) => vo
         ))}
       </div>
 
-      <div className="board-grid">
-        <section>
-          <SectionHead meta={cfg.todoSection} count={todo.length} />
-          {todo.length === 0 ? (
-            <div className="card"><EmptyState icon="check" title={user?.role === 'ADMIN' ? '暂无待办' : '没有待你处理的需求'}
-              reason={user?.role === 'ADMIN' ? '管理员无需处理节点任务，可下钻任意需求查看流转详情。' : '流转到你这一步的需求会自动出现在这里。'} /></div>
-          ) : todoGroups ? (
-            todoGroups.map((g) => (
-              <div key={g.key} style={{ marginBottom: 12 }}>
-                <div className="row" style={{ fontSize: 12, color: 'var(--text-2)', margin: '6px 0' }}>
-                  <Icon name={g.icon as any} size={16} /> {g.label} <span className="pill" style={{ marginLeft: 4 }}>{g.items.length}</span>
+      <div className="card card-pad row" style={{ marginTop: 8, gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="field-icon" style={{ width: 180 }}>
+          <Icon name="search" size={16} className="fi-icon" />
+          <input className="input" value={jiraQuery} onChange={(e) => setJiraQuery(e.target.value)} placeholder="搜索 Jira" aria-label="搜索 Jira" />
+        </div>
+        <div className="field-icon" style={{ width: 200 }}>
+          <Icon name="search" size={16} className="fi-icon" />
+          <input className="input" value={titleQuery} onChange={(e) => setTitleQuery(e.target.value)} placeholder="搜索需求名称" aria-label="搜索需求名称" />
+        </div>
+        <SearchSelect options={customerOptions} value={customerFilter} onChange={(v) => setCustomerFilter(String(v))} width={160} placeholder="全部客户" />
+        <SearchSelect options={personOptions} value={personFilter} onChange={(v) => setPersonFilter(String(v))} width={180} placeholder="全部人员" />
+        <SearchSelect options={versionOptions} value={versionQuery} onChange={(v) => setVersionQuery(String(v))} width={140} placeholder="全部版本" />
+        {(jiraQuery || titleQuery || customerFilter || personFilter || versionQuery) && (
+          <button className="btn btn-sm btn-ghost" onClick={() => { setJiraQuery(''); setTitleQuery(''); setCustomerFilter(''); setPersonFilter(''); setVersionQuery(''); }}>
+            清空筛选
+          </button>
+        )}
+      </div>
+
+      <div className="board-grid" style={showTodo ? undefined : { gridTemplateColumns: 'minmax(0, 1fr)' }}>
+        {showTodo && (
+          <section>
+            <SectionHead meta={cfg.todoSection} count={todo.length} />
+            {todo.length === 0 ? (
+              <div className="card"><EmptyState icon="check" title="没有待你处理的需求"
+                reason="流转到你这一步的需求会自动出现在这里。" /></div>
+            ) : todoGroups ? (
+              todoGroups.map((g) => (
+                <div key={g.key} style={{ marginBottom: 12 }}>
+                  <div className="row" style={{ fontSize: 12, color: 'var(--text-2)', margin: '6px 0' }}>
+                    <Icon name={g.icon as any} size={16} /> {g.label} <span className="pill" style={{ marginLeft: 4 }}>{g.items.length}</span>
+                  </div>
+                  {g.items.map((r) => (
+                    <ReqCardCompact key={r.id} r={r} nodeName={nodeMap[r.id]?.node} totalNodes={nodeMap[r.id]?.nodes?.length} onOpen={onOpen} />
+                  ))}
                 </div>
-                {g.items.map((r) => (
-                  <ReqCardCompact key={r.id} r={r} nodeName={nodeMap[r.id]?.node} totalNodes={nodeMap[r.id]?.nodes?.length} onOpen={onOpen} />
-                ))}
-              </div>
-            ))
-          ) : (
-            todo.map((r) => (
-              <ReqCardCompact key={r.id} r={r} nodeName={nodeMap[r.id]?.node} totalNodes={nodeMap[r.id]?.nodes?.length} onOpen={onOpen} />
-            ))
-          )}
-        </section>
+              ))
+            ) : (
+              todo.map((r) => (
+                <ReqCardCompact key={r.id} r={r} nodeName={nodeMap[r.id]?.node} totalNodes={nodeMap[r.id]?.nodes?.length} onOpen={onOpen} />
+              ))
+            )}
+          </section>
+        )}
 
         <section>
           <SectionHead meta={cfg.activeSection} count={active.length} />

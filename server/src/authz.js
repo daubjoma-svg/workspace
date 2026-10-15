@@ -32,12 +32,12 @@ const ACTIONS = {
   'force-submit': { label: '强制提交', scope: 'NODE' },
 };
 
-const ROLE_LABEL = { CSM: 'CSM', PO: '产品', RD: '研发', QA: '测试', ADMIN: '管理员' };
+const ROLE_LABEL = { CSM: 'CSM', PO: '产品', RD: '后端', FE: '前端', QA: '测试', ADMIN: '管理员' };
 
 /** 取用户展示名，用于把 403 文案写清楚「负责人是谁」。查不到时退化成占位标识而非抛错 */
-function displayName(userId) {
+async function displayName(userId) {
   if (!userId) return '未指派';
-  const u = db.prepare('SELECT name,role FROM users WHERE id=?').get(userId);
+  const u = await db.one('SELECT name,role FROM users WHERE id=?', [userId]);
   return u ? `${u.name}（${ROLE_LABEL[u.role] || u.role}）` : `用户#${userId}`;
 }
 
@@ -54,13 +54,13 @@ function deny(req, res, message, ctx) {
 }
 
 /** 需求单前置校验：ID 合法性 / 存在性 / 终态。通过则返回需求行，否则已写响应返回 null */
-function loadRequirementOr4xx(req, res, actionLabel) {
+async function loadRequirementOr4xx(req, res, actionLabel) {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isInteger(id) || id <= 0) {
     res.status(400).json({ error: '需求 ID 不合法' });
     return null;
   }
-  const r = engine.getReq(id);
+  const r = await engine.getReq(id);
   if (!r) {
     res.status(404).json({ error: `需求 #${id} 不存在` });
     return null;
@@ -74,44 +74,46 @@ function loadRequirementOr4xx(req, res, actionLabel) {
 }
 
 /** 需求所有权动作：仅提单人。ADMIN 已在外层放行 */
-function checkOwnerScope(req, res, next, r, spec) {
+async function checkOwnerScope(req, res, next, r, spec) {
   if (r.csm_id === req.user.id) return next();
   return deny(req, res,
-    `需求「${r.req_no}」的提单人是 ${displayName(r.csm_id)}，你是 ${selfName(req.user)}，`
+    `需求「${r.req_no}」的提单人是 ${await displayName(r.csm_id)}，你是 ${selfName(req.user)}，`
     + `无权执行「${spec.label}」（该操作仅提单人或管理员可执行）`,
     { requirement_id: r.id, action: spec.label, scope: 'OWNER', expect_user_id: r.csm_id });
 }
 
 /** 当前节点负责人动作 */
-function checkNodeScope(req, res, next, r, spec) {
-  const node = engine.getNodeBySeq(r.template_id, r.current_seq);
+async function checkNodeScope(req, res, next, r, spec) {
+  const node = await engine.getNodeBySeq(r.template_id, r.current_seq);
   if (!node) {
     // 模板被改过 / current_seq 越界：没有可比对的负责人，回落到需求所有权
     logger.warn('authz_node_missing', { requirement_id: r.id, current_seq: r.current_seq, template_id: r.template_id });
-    return checkOwnerScope(req, res, next, r, spec);
+    return await checkOwnerScope(req, res, next, r, spec);
   }
   req.currentNode = node;
 
   if (node.node_type === 'HUMAN') {
-    const assignee = engine.assigneeForNode(r, node);
-    if (!assignee) {
+    // 一个节点可能有多个负责人（如「研发开发」节点同时指派 RD 与 FE），任一负责人可操作
+    const assignees = engine.nodeAssigneeIds(r, node);
+    if (!assignees.length) {
       // HUMAN 节点但对应角色没指派（如 po_id 为空）：不能把需求锁死，交给提单人兜底
       logger.warn('authz_node_unassigned', {
         requirement_id: r.id, node_id: node.id, node_role: node.role,
       });
-      return checkOwnerScope(req, res, next, r, spec);
+      return await checkOwnerScope(req, res, next, r, spec);
     }
-    if (assignee === req.user.id) return next();
+    if (assignees.includes(req.user.id)) return next();
+    const ownerNames = (await Promise.all(assignees.map((uid) => displayName(uid)))).join(' / ');
     return deny(req, res,
-      `当前节点「${node.name}」的负责人是 ${displayName(assignee)}，你是 ${selfName(req.user)}，`
+      `当前节点「${node.name}」的负责人是 ${ownerNames}，你是 ${selfName(req.user)}，`
       + `无权执行「${spec.label}」`,
-      { requirement_id: r.id, node_id: node.id, action: spec.label, scope: 'NODE', expect_user_id: assignee });
+      { requirement_id: r.id, node_id: node.id, action: spec.label, scope: 'NODE', expect_user_ids: assignees });
   }
 
   // AI 节点处于挂起态（打回 / 执行失败 / 待澄清）：engine.sendBack 的语义是「由提交人或管理员确认后继续」
   if (r.csm_id === req.user.id) return next();
   return deny(req, res,
-    `当前节点「${node.name}」是 AI 节点，挂起后仅提单人 ${displayName(r.csm_id)} 或管理员可执行「${spec.label}」，`
+    `当前节点「${node.name}」是 AI 节点，挂起后仅提单人 ${await displayName(r.csm_id)} 或管理员可执行「${spec.label}」，`
     + `你是 ${selfName(req.user)}`,
     { requirement_id: r.id, node_id: node.id, action: spec.label, scope: 'AI_NODE', expect_user_id: r.csm_id });
 }
@@ -123,8 +125,8 @@ function checkNodeScope(req, res, next, r, spec) {
 function requireNodeOwner(action) {
   const spec = ACTIONS[action];
   if (!spec) throw new Error(`requireNodeOwner: 未知动作 ${action}`);
-  return function nodeOwnerGuard(req, res, next) {
-    const r = loadRequirementOr4xx(req, res, spec.label);
+  return async function nodeOwnerGuard(req, res, next) {
+    const r = await loadRequirementOr4xx(req, res, spec.label);
     if (!r) return undefined;
     // 重复提交会把已在流程中的需求打回第一个节点（静默数据损坏），在鉴权层一并拦掉
     if (action === 'submit' && r.status !== engine.STATUS.DRAFT) {
@@ -133,8 +135,8 @@ function requireNodeOwner(action) {
     req.requirement = r;
     if (req.user.role === 'ADMIN') return next();
     return spec.scope === 'OWNER'
-      ? checkOwnerScope(req, res, next, r, spec)
-      : checkNodeScope(req, res, next, r, spec);
+      ? await checkOwnerScope(req, res, next, r, spec)
+      : await checkNodeScope(req, res, next, r, spec);
   };
 }
 
@@ -148,16 +150,16 @@ function requireNodeOwner(action) {
  *   3) 澄清期间需求状态为 CLARIFYING、当前节点是挂起的 AI 节点，本就没有"当前人工负责人"可比对。
  */
 function requireClarifyOwner() {
-  return function clarifyOwnerGuard(req, res, next) {
+  return async function clarifyOwnerGuard(req, res, next) {
     const cid = Number.parseInt(req.params.id, 10);
     if (!Number.isInteger(cid) || cid <= 0) return res.status(400).json({ error: '澄清问题 ID 不合法' });
-    const c = db.prepare('SELECT * FROM clarifies WHERE id=?').get(cid);
+    const c = await db.one('SELECT * FROM clarifies WHERE id=?', [cid]);
     if (!c) return res.status(404).json({ error: `澄清问题 #${cid} 不存在` });
     if (c.status !== 'OPEN') {
       // 重复回答会二次触发 activateNode，重复追加澄清正文并重跑 AI 节点，属静默数据污染
       return res.status(400).json({ error: `澄清问题 #${cid} 已处理（${c.status}），不能重复回答` });
     }
-    const r = engine.getReq(c.requirement_id);
+    const r = await engine.getReq(c.requirement_id);
     if (!r) return res.status(404).json({ error: '澄清问题关联的需求不存在' });
     const terminal = TERMINAL_STATUS[r.status];
     if (terminal) return res.status(400).json({ error: `需求「${r.req_no}」${terminal}，不能再回答澄清问题` });
@@ -166,10 +168,34 @@ function requireClarifyOwner() {
     req.requirement = r;
     if (req.user.role === 'ADMIN' || r.csm_id === req.user.id) return next();
     return deny(req, res,
-      `澄清问题 #${cid} 属于需求「${r.req_no}」，应由提单人 ${displayName(r.csm_id)} 回答，`
+      `澄清问题 #${cid} 属于需求「${r.req_no}」，应由提单人 ${await displayName(r.csm_id)} 回答，`
       + `你是 ${selfName(req.user)}`,
       { requirement_id: r.id, clarify_id: cid, scope: 'CLARIFY', expect_user_id: r.csm_id });
   };
 }
 
-module.exports = { requireNodeOwner, requireClarifyOwner, TERMINAL_STATUS, ACTIONS };
+/** 测试用例写入仅限本需求测试负责人或管理员；未指派时不回落到提单人，避免代填测试结果。 */
+function requireTestCaseOwner() {
+  return async function testCaseOwnerGuard(req, res, next) {
+    if (req.body?.kind !== 'TEST_CASE') return next();
+    // 防止 parseInt("10e1") 与写入时 Number("10e1") 指向不同需求，必须使用规范十进制 ID。
+    if (!/^[1-9]\d*$/.test(req.params.id)) {
+      logger.warn('test_case_invalid_id', { requirement_id: req.params.id, user_id: req.user.id });
+      return res.status(400).json({ error: '需求 ID 不合法' });
+    }
+    try {
+      const r = await loadRequirementOr4xx(req, res, '保存测试用例执行结果');
+      if (!r) return undefined;
+      req.requirement = r;
+      if (req.user.role === 'ADMIN' || (req.user.role === 'QA' && r.qa_id === req.user.id)) return next();
+      return deny(req, res, '仅该需求的测试负责人或管理员可修改测试用例执行结果', {
+        requirement_id: r.id, action: '保存测试用例执行结果', scope: 'TEST_CASE', expect_user_id: r.qa_id,
+      });
+    } catch (error) {
+      logger.error('test_case_authz_failed', { requirement_id: req.params.id, user_id: req.user.id, reason: error.message });
+      return next(error);
+    }
+  };
+}
+
+module.exports = { requireNodeOwner, requireClarifyOwner, requireTestCaseOwner, TERMINAL_STATUS, ACTIONS };

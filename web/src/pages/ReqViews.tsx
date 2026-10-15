@@ -13,6 +13,7 @@ export function actionName(a: string) {
     CLARIFY_DONE: '澄清完成', CONFIRM: '确认流转', RETURN: '打回', FORCE_SUBMIT: '强制提交',
     ARTIFACT_SAVE: '保存产物', DONE: '流程完成', CANCEL: '取消需求',
     ASSIGN: '产品指派', CHAT_SEND: '发送消息', CHAT_ANSWER: '回复消息',
+    AI_PRD_GEN: 'AI 生成 PRD',
   } as Record<string, string>)[a] || a;
 }
 
@@ -52,6 +53,22 @@ export function EvaluationView({ data, meta }: { data: any; meta: ArtifactMeta |
   ];
   const levelRank = (l?: string) => l === '高' ? 0 : l === '中' ? 1 : l === '低' ? 2 : 3;
   attentionMerged.sort((a, b) => levelRank(a.level) - levelRank(b.level));
+  const visibleAttention = attentionMerged.slice(0, 6);
+  const scheduling = data.scheduling || {
+    status: needsAttention ? 'NEEDS_CONFIRMATION' : 'READY',
+    advice: needsAttention ? '建议先确认关注事项，再进入排期。' : '可按当前优先级进入常规排期。',
+  };
+  const scheduleLabels: Record<string, [string, string]> = {
+    FAST_TRACK: ['可快速排期', 'tag-green'],
+    READY: ['可排期', 'tag-green'],
+    NEEDS_CONFIRMATION: ['补充信息后排期', 'tag-orange'],
+    HOLD: ['暂不建议排期', 'tag-danger'],
+  };
+  const [scheduleLabel, scheduleClass] = scheduleLabels[scheduling.status] || scheduleLabels.NEEDS_CONFIRMATION;
+  const summary = data.summary || data.rationality?.reason || '暂无评估总结';
+  // 已保存的评估可能漏传或返回非法值，缺失不能据此判断为旧版本，也不能补造分数。
+  const confidence: number | null = typeof data.confidence === 'number' && Number.isFinite(data.confidence)
+    && data.confidence >= 0 && data.confidence <= 1 ? data.confidence : null;
 
   // 退化：is_mock=true（兜底产物）都显示「AI 评估未产出」友好提示，不渲染内容
   if (isMock) {
@@ -75,67 +92,67 @@ export function EvaluationView({ data, meta }: { data: any; meta: ArtifactMeta |
 
   return (
     <div>
-      {/* Hero 摘要：等级 + 人日 + 判定（一行精炼，CSM/产品一眼看到） */}
+      {/* 模板 A：先给结论，让需求提出人无需阅读长清单即可决定是否进入排期。
+          三个指标统一「标签 / 数值 / 说明」三段式，缺说明时补占位符以保证基线对齐。 */}
       <div className="card card-pad" style={{ background: needsAttention ? 'var(--warn-wash)' : 'var(--success-wash)', borderColor: needsAttention ? 'var(--warn)' : 'var(--success)' }}>
-        <div className="row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
-          <div>
-            <div className="muted" style={{ fontSize: 11 }}>改动等级</div>
-            <div style={{
-              fontSize: 32, fontWeight: 800,
-              color: levelColor(data.level),
-              background: `linear-gradient(135deg, ${levelColor(data.level)}22 0%, transparent 100%)`,
-              padding: '2px 12px', borderRadius: 6,
-            }}>{data.level || '—'}</div>
-            {levelDesc(data.level) && (
-              <div className="muted" style={{ fontSize: 11, marginTop: 4, color: levelColor(data.level) }}>{levelDesc(data.level)}</div>
+        <div className="section-title" style={{ marginBottom: 6 }}>结论摘要</div>
+        <p className="md" style={{ margin: 0, fontSize: 15, lineHeight: 1.7, fontWeight: 600 }}>{summary}</p>
+        <div className="eval-summary">
+          <div className="eval-stat">
+            <div className="k">改动等级</div>
+            <div className="v" style={{ color: levelColor(data.level) }}>{data.level || '—'}</div>
+            <div className="sub" style={{ color: levelColor(data.level) }}>{levelDesc(data.level) || '\u00a0'}</div>
+          </div>
+          <div className="eval-stat">
+            <div className="k">预估工时</div>
+            <div className="v">
+              {data.effort ? `${data.effort.min_days}-${data.effort.max_days}` : '—'}
+              <span className="unit">人日</span>
+            </div>
+            <div className="sub">
+              {typeof data.effort?.confidence === 'number' && data.effort.confidence > 0
+                ? `工时置信度 ${Math.round(data.effort.confidence * 100)}%`
+                : '\u00a0'}
+            </div>
+          </div>
+          {/* AI 自评置信度：反映「信息是否足够、结论有多可靠」，≥85% 表示信息已足够、不会再有澄清追问。
+              与「工时置信度」不是同一个指标（后者只针对人日估算的把握）。 */}
+          <div className="eval-stat">
+            <div className="k">AI 预测置信度</div>
+            {confidence === null ? (
+              <>
+                <div className="v muted">—</div>
+                <div className="sub">本次评估未返回有效置信度，需重新评估</div>
+              </>
+            ) : (
+              <>
+                <div className="v" style={{ color: confidence >= 0.85 ? 'var(--success-ink)' : 'var(--warn-ink)' }}>
+                  {Math.round(confidence * 100)}<span className="unit">%</span>
+                </div>
+                <div className="sub">{confidence >= 0.85 ? '信息已足够' : '信息仍有缺口，可能继续澄清'}</div>
+              </>
             )}
           </div>
-          {data.effort && (
-            <div>
-              <div className="muted" style={{ fontSize: 11 }}>预估工时</div>
-              <div style={{ fontSize: 28, fontWeight: 700 }}>{data.effort.min_days}-{data.effort.max_days} <span style={{ fontSize: 14, fontWeight: 400 }} className="muted">人日</span></div>
-            </div>
-          )}
-          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-            <span className={`tag ${needsAttention ? 'tag-orange' : 'tag-green'}`} style={{ fontSize: 13, padding: '4px 12px' }}>
-              {needsAttention ? '需关注' : '需求可行'}
-            </span>
-            {typeof data.effort?.confidence === 'number' && data.effort.confidence > 0 && (
-              <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>置信度 {Math.round(data.effort.confidence * 100)}%</div>
-            )}
+          <div className="eval-verdict">
+            <span className={`tag ${scheduleClass}`}>{scheduleLabel}</span>
+            <div className="sub">需求合理性：{needsAttention ? '需关注' : '合理'}</div>
           </div>
         </div>
-        {data.rationality?.reason && (
-          <p className="md" style={{ marginTop: 12, marginBottom: 0, fontSize: 13.5, color: 'var(--text-2)' }}>{data.rationality.reason}</p>
-        )}
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 13, lineHeight: 1.65 }}>
+          <b>排期建议：</b>{scheduling.advice}
+        </div>
       </div>
 
-      {/* 业务评估：客户 + 产品 双视角 */}
-      {data.perspectives && (
-        <div className="grid2" style={{ marginTop: 14 }}>
-          {[['customer', '客户视角'], ['product', '产品视角']].map(([k, label]) => {
-            const text = data.perspectives?.[k];
-            if (!text) return null;
-            return (
-              <div key={k} className="card card-pad" style={{ background: 'var(--panel-2)' }}>
-                <div className="section-title" style={{ marginBottom: 6 }}>{label}</div>
-                <p className="md" style={{ fontSize: 13, lineHeight: 1.7 }}>{text}</p>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* 需要关注（合并原 attention_points + risks，按等级排序，业务级表述） */}
-      {attentionMerged.length > 0 && (
+      {/* 只展示最重要的 3-6 项；历史报告即使字段更多也不再淹没首屏。 */}
+      {visibleAttention.length > 0 && (
         <div className="card card-pad" style={{ marginTop: 14, borderColor: needsAttention ? 'var(--warn)' : 'var(--border)' }}>
           <div className="section-title row" style={{ marginBottom: 10 }}>
             <Icon name="warning" size={16} />
-            <span>需要关注（{attentionMerged.length}）</span>
+            <span>需要关注（{visibleAttention.length}）</span>
             {needsAttention && <span className="tag tag-orange" style={{ marginLeft: 'auto', fontSize: 11 }}>有风险，建议先和 CSM/产品对齐</span>}
           </div>
           <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none' }}>
-            {attentionMerged.map((item, i) => (
+            {visibleAttention.map((item, i) => (
               <li key={i} style={{ padding: '8px 0', borderTop: i === 0 ? 'none' : '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                 {item.level && <span className={`tag ${item.level === '高' ? 'tag-danger' : item.level === '中' ? 'tag-warn' : 'tag-grey'}`} style={{ flex: '0 0 auto', fontSize: 10, padding: '1px 6px' }}>{item.level}</span>}
                 <span style={{ fontSize: 13, lineHeight: 1.65, flex: 1 }}>{item.text}</span>
@@ -162,36 +179,71 @@ export function NoteView({ data }: { data: any }) {
   );
 }
 
-export function TestCaseView({ cases, reqId, artifact, onSaved }: { cases: any[]; reqId: number; artifact: Artifact; onSaved: () => void }) {
+/** 用例对需求查看者可见；只有详情页判定有维护权限时才显示执行控件，默认只读。 */
+export function TestCaseView({ cases, reqId, artifact, canEdit = false, onSaved }: { cases: any[]; reqId: number; artifact: Artifact; canEdit?: boolean; onSaved: () => void }) {
   const { toast } = useApp();
   const [list, setList] = useState(cases);
+  /** 保存失败（包括负责人变更后的 403）必须明确提示，不能展示保存成功。 */
   const save = async () => {
-    await api.post(`/api/requirements/${reqId}/artifacts`, { kind: 'TEST_CASE', content: JSON.stringify(list, null, 2) });
-    toast('用例结果已保存'); onSaved();
+    if (!canEdit) return;
+    try {
+      await api.post(`/api/requirements/${reqId}/artifacts`, { kind: 'TEST_CASE', content: JSON.stringify(list, null, 2) });
+      toast('用例结果已保存'); onSaved();
+    } catch (error: any) {
+      console.warn('[TestCaseView] save failed', { requirement_id: reqId, reason: error.message });
+      toast(error.message || '用例结果保存失败', 'error');
+    }
   };
+  const setResult = (i: number, v: string) => setList((l) => l.map((x, j) => (j === i ? { ...x, result: v } : x)));
+  const setAll = (v: string) => setList((l) => l.map((x) => ({ ...x, result: v })));
+  const passed = list.filter((c) => c.result === 'PASS').length;
+  const allPassed = list.length > 0 && passed === list.length;
+  // result 只认 'PASS' 为通过；勾选即通过，取消勾选回到「未执行」（失败态只能走右侧下拉，避免误覆盖）
+  const isPass = (c: any) => c.result === 'PASS';
   return (
     <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        {canEdit && <>
+          <button className="btn btn-primary btn-sm" onClick={() => setAll('PASS')} disabled={allPassed}>一键勾选通过</button>
+          <button className="btn btn-sm" onClick={() => setAll('')} disabled={passed === 0}>清空结果</button>
+        </>}
+        <span className="muted" style={{ fontSize: 12 }}>已通过 {passed}/{list.length}</span>
+        {!canEdit && <span className="muted" style={{ fontSize: 12 }}>只读</span>}
+      </div>
       <table className="tbl">
-        <thead><tr><th>类型</th><th>用例</th><th>步骤</th><th>预期</th><th>结果</th></tr></thead>
+        <thead><tr>
+          {canEdit && <th style={{ width: 36 }}>
+            <input type="checkbox" checked={allPassed} title="全选通过" onChange={(e) => setAll(e.target.checked ? 'PASS' : '')} />
+          </th>}
+          <th>类型</th><th>用例</th><th>步骤</th><th>预期</th><th>结果</th>
+        </tr></thead>
         <tbody>
           {list.map((c, i) => (
             <tr key={i}>
+              {canEdit && <td>
+                <input
+                  type="checkbox"
+                  checked={isPass(c)}
+                  title="勾选=通过"
+                  onChange={(e) => setResult(i, e.target.checked ? 'PASS' : '')}
+                />
+              </td>}
               <td><span className={`tag tag-${c.type === '正常流' ? 'green' : c.type === '边界流' ? 'orange' : 'red'}`}>{c.type}</span></td>
               <td>{c.title}</td><td className="muted">{c.steps}</td><td className="muted">{c.expect}</td>
               <td>
-                <SearchSelect
+                {canEdit ? <SearchSelect
                   options={[{ value: '', label: '未执行' }, { value: 'PASS', label: '通过' }, { value: 'FAIL', label: '失败' }]}
                   value={c.result}
-                  onChange={(v) => setList((l) => l.map((x, j) => j === i ? { ...x, result: String(v) } : x))}
+                  onChange={(v) => setResult(i, String(v))}
                   width={90}
                   placeholder="未执行"
-                />
+                /> : <span>{c.result === 'PASS' ? '通过' : c.result === 'FAIL' ? '失败' : '未执行'}</span>}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={save}>保存执行结果</button>
+      {canEdit && <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={save}>保存执行结果</button>}
     </div>
   );
 }

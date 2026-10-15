@@ -26,10 +26,11 @@ const PIPE_EDGES = [
 ];
 
 /* ── 注册表单 ── */
-const REGISTER_ROLES: { value: 'CSM' | 'PO' | 'RD' | 'QA'; label: string }[] = [
+const REGISTER_ROLES: { value: 'CSM' | 'PO' | 'RD' | 'FE' | 'QA'; label: string }[] = [
   { value: 'CSM', label: '需求发起人' },
   { value: 'PO', label: '产品' },
-  { value: 'RD', label: '研发' },
+  { value: 'RD', label: '后端' },
+  { value: 'FE', label: '前端' },
   { value: 'QA', label: '测试' },
 ];
 
@@ -39,7 +40,7 @@ export function RegisterForm({ onLogin }: { onLogin: (u: User, token: string) =>
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [feishuKey, setFeishuKey] = useState('');
-  const [role, setRole] = useState<'CSM' | 'PO' | 'RD' | 'QA'>('CSM');
+  const [role, setRole] = useState<'CSM' | 'PO' | 'RD' | 'QA' | 'FE'>('CSM');
   const [loading, setLoading] = useState(false);
 
   const submit = async (e: React.FormEvent) => {

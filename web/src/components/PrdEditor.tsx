@@ -11,19 +11,22 @@ import { useState } from 'react';
 import { Icon } from './Icon';
 import { RichTextEditor } from './rich/RichTextEditor';
 import { RichText } from './RichText';
-import { renderMarkdown } from '../lib/markdown';
+import { markdownToHtml, renderMarkdown } from '../lib/markdown';
 import { isHtmlContent } from '../lib/sanitize';
 
 interface PrdEditorProps {
   /** 初始内容（编辑已有 PRD 传入原内容；新增传空串） */
   initial: string;
   title?: string;
+  /** 编辑器占位文案；不同产物（PRD / 测试报告）复用时区分提示 */
+  placeholder?: string;
   onClose: () => void;
   onSave: (content: string) => void;
 }
 
-export function PrdEditor({ initial, title = 'PRD 文档', onClose, onSave }: PrdEditorProps) {
-  const [value, setValue] = useState(initial);
+export function PrdEditor({ initial, title = 'PRD 文档', placeholder = '输入 PRD 内容…', onClose, onSave }: PrdEditorProps) {
+  // AI 产物历史上以 Markdown 保存；进入 Tiptap 前转换为 HTML，避免源码符号和换行丢失。
+  const [value, setValue] = useState(() => isHtmlContent(initial) ? initial : markdownToHtml(initial));
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
 
   return (
@@ -48,7 +51,7 @@ export function PrdEditor({ initial, title = 'PRD 文档', onClose, onSave }: Pr
             <span>支持标题、列表、粗体/斜体、代码块、链接；可直接粘贴图片（Ctrl/Cmd + V）自动上传</span>
           </div>
           {mode === 'edit' ? (
-            <RichTextEditor value={value} onChange={setValue} placeholder={'输入 PRD 内容…'} minRows={12} />
+            <RichTextEditor value={value} onChange={setValue} placeholder={placeholder} minRows={12} />
           ) : isHtmlContent(value) ? (
             <RichText html={value} className="md md-render prd-preview" />
           ) : (

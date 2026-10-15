@@ -6,12 +6,17 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "migrate:sqlite": "node scripts/migrate-sqlite.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^13.0.2",
     "express": "^4.21.2",
+    "mysql2": "^3.24.4",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "jscodeshift": "^0.15.2"
   }
 }

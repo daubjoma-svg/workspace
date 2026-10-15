@@ -1,0 +1,29 @@
+.git
+.gitignore
+.DS_Store
+**/._*
+
+# 本地依赖和构建产物必须在镜像内重新生成，避免平台不兼容和构建上下文膨胀。
+**/node_modules/
+**/dist/
+**/*.log
+
+# 环境变量、主密钥和运行数据严禁进入镜像层。
+**/.env
+**/.env.*
+**/.sop-master-key
+server/data/
+server/uploads/
+backups/
+# 服务器导入目录可能包含数据库备份和主密钥，不得发送给镜像构建器。
+import/
+
+# 仅开发和文档使用的内容不参与镜像构建。
+.cache/
+.claude/
+.workbuddy/
+docs/
+prototype/
+web/scripts/
+web/vite.config.ts.timestamp-*.mjs
+*.md

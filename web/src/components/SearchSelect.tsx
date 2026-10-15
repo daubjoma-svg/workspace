@@ -20,8 +20,7 @@ import { decideFlip, estimatePanelHeight, FLIP_GAP } from '../lib/dropdownGeomet
    - 面板改用 React Portal 挂到 document.body + position: fixed：
      彻底脱离任何祖先容器（.tbl-wrap / .modal / stacking context）的裁切与层叠，
      视觉上「浮在表格上」而非「嵌在表格里」。
-   - 关闭面板在 scroll（capture） + resize 上：面板与触发器失去锚点会显得脱节，
-     简单可靠，避免每次滚动都重新计算的复杂度。
+   - 锚点所在容器滚动时重定位面板；候选列表自身滚动保持打开。
    - 不再需要 .ss-flip-up 类（fixed 定位的展开方向由内联 top 决定）。
    ============================================================ */
 
@@ -42,6 +41,11 @@ export interface SearchSelectProps {
   width?: string | number;
   /** 外层附加样式 */
   style?: React.CSSProperties;
+  /**
+   * 可选：关键字变化回调（用于服务端异步检索）。
+   * 传入后由调用方把 options 换成检索结果，组件本地仍按 label/subLabel 再过滤一次，二者不冲突。
+   */
+  onQueryChange?: (query: string) => void;
 }
 
 const PANEL_MIN_W = 200;
@@ -55,6 +59,7 @@ export function SearchSelect({
   disabled = false,
   width,
   style,
+  onQueryChange,
 }: SearchSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -113,6 +118,7 @@ export function SearchSelect({
       setFlipUp(!!(p as any).flipUp);
     }
     setQuery('');
+    onQueryChange?.('');
     const idx = filtered.findIndex((o) => String(o.value) === String(value ?? ''));
     setHl(idx >= 0 ? idx : 0);
     setOpen(true);
@@ -139,10 +145,15 @@ export function SearchSelect({
     if (up !== flipUp) setFlipUp(up);
   }, [open, hl, filtered.length, flipUp]);
 
-  // 高亮项滚入可视区（键盘导航时列表跟随）
+  // 只滚动候选列表；scrollIntoView 会连带滚动弹窗，触发锚点失效并误关面板。
   useEffect(() => {
-    const el = listRef.current?.children[hl] as HTMLElement | undefined;
-    el?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    const list = listRef.current;
+    const el = list?.children[hl] as HTMLElement | undefined;
+    if (!list || !el) return;
+    const listRect = list.getBoundingClientRect();
+    const itemRect = el.getBoundingClientRect();
+    if (itemRect.top < listRect.top) list.scrollTop += itemRect.top - listRect.top;
+    else if (itemRect.bottom > listRect.bottom) list.scrollTop += itemRect.bottom - listRect.bottom;
   }, [hl, open]);
 
   // 过滤结果变化时把高亮收拢到有效区间（外部 options 更新 / 查询清空）
@@ -151,8 +162,7 @@ export function SearchSelect({
     setHl((h) => (h >= filtered.length ? filtered.length - 1 : h));
   }, [filtered.length]);
 
-  // 关闭条件：点击外部 / 滚动 / 视口变化 —— Portal 脱离 DOM 后无法仅靠事件冒泡，
-  // 这里用 capture 监听 window 的滚动（capture 阶段捕获任何内部滚动）+ resize
+  // 外层弹窗滚动时跟随触发器；Portal 内的候选列表滚动不改变锚点。
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -161,7 +171,14 @@ export function SearchSelect({
       if (panelElRef.current?.contains(t)) return;
       closePanel();
     };
-    const onScroll = () => closePanel();
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && panelElRef.current?.contains(e.target)) return;
+      const p = computePos(panelElRef.current?.offsetHeight || estimatePanelHeight(options.length));
+      if (p) {
+        setPos({ top: p.top, left: p.left, width: p.width });
+        setFlipUp(!!p.flipUp);
+      }
+    };
     const onResize = () => closePanel();
     document.addEventListener('mousedown', onDown);
     window.addEventListener('scroll', onScroll, true); // capture: 捕获 .tbl-wrap 内部滚动
@@ -171,7 +188,7 @@ export function SearchSelect({
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onResize);
     };
-  }, [open]);
+  }, [open, options.length]);
 
   const choose = (opt: DropdownPanelOption) => {
     onChange(opt.value);
@@ -181,6 +198,7 @@ export function SearchSelect({
   const handleInputChange = (v: string) => {
     setQuery(v);
     setHl(0);
+    onQueryChange?.(v);
   };
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

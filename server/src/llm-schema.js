@@ -35,10 +35,10 @@ const ImpactScopeItem = z.object({
 });
 
 /**
- * EVALUATE：engine.js 消费 level / rationality.verdict / attention_points；
- * 前端 EvaluationView 消费 rationality.reason / effort / perspectives / impact_scope。
- * P0 改造：verdict 只允许 FEASIBLE / NEEDS_ATTENTION，AI 不再向 CSM 提问阻塞流程
- * （FEASIBLE=可直接进入产品评审；NEEDS_ATTENTION=有风险但继续走，不 raiseClarifies）。
+ * EVALUATE：engine.js 消费 level / rationality.verdict / attention_points / questions；
+ * 前端 EvaluationView 消费 summary / scheduling / rationality.reason / effort / attention_points。
+ * verdict 只允许 FEASIBLE / NEEDS_ATTENTION（FEASIBLE=可直接进入产品评审；NEEDS_ATTENTION=有风险但继续走）。
+ * 关键信息缺失时由 questions 非空表达：engine 会 raiseClarifies 卡在评估节点，等需求发起人补充后重跑。
  */
 const EvaluateResult = Meta.extend({
   level: z.enum(['L1', 'L2', 'L3', 'L4']),
@@ -47,12 +47,23 @@ const EvaluateResult = Meta.extend({
     reason: z.string().optional(),
     existing_capability: z.string().optional(),
   }),
+  // 模板 A 首屏摘要：需求发起人先看到是否值得排期、问题在哪里。
+  summary: z.string().optional(),
+  // 阻断性问题：非空时评估节点挂起为待澄清，需求发起人补充后 AI 重新评估；信息充足时为空数组。
+  questions: z.array(z.string()).default([]),
+  // AI 自评置信度 0-1：engine 用它判断"信息是否已足够"（≥0.8 不再挂起澄清）。
+  // 新评估必须返回真实自评分，漏传不能作为成功产物落库；历史产物由展示层兼容缺失。
+  confidence: z.number().min(0).max(1),
+  scheduling: z.object({
+    status: z.enum(['FAST_TRACK', 'READY', 'NEEDS_CONFIRMATION', 'HOLD']),
+    advice: z.string(),
+  }).optional(),
   // 需求评审专家视角：站在客户/产品角度评估（不是技术评审）
   perspectives: z.object({
     customer: z.string().optional(),   // 客户视角：业务价值/对客户的意义
     product: z.string().optional(),    // 产品视角：是否符合产品方向/优先级
   }).optional(),
-  attention_points: z.array(z.string()).default([]),
+  attention_points: z.array(z.string()).max(6).default([]),
   // 开发时长评估（核心产出：难度 + 人日）
   effort: z.object({
     min_days: z.number(),
@@ -124,8 +135,12 @@ function minimalFallback(action, raw) {
       return {
         level: 'L3',
         rationality: { verdict: 'FEASIBLE', reason: text.slice(0, 500) || 'AI 未返回结构化评估，已按中位档兜底，请人工复核。' },
+        summary: 'AI 未生成有效评估摘要，请人工复核后再安排排期。',
+        scheduling: { status: 'NEEDS_CONFIRMATION', advice: '建议先补充需求范围与验收标准，再进入排期。' },
         perspectives: {},
         attention_points: [],
+        questions: [],
+        confidence: 0,
         effort: { min_days: 3, max_days: 5, confidence: 0, basis: '兜底：AI 未给出开发时长评估' },
         risks: [],
         _source: 'fallback', _raw: text,

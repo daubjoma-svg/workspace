@@ -70,6 +70,63 @@ const HEADING_RE = /^(#{1,4})\s+(.*)$/;
 const UL_RE = /^\s*[-*+]\s+/;
 const OL_RE = /^\s*\d+[.)]\s+/;
 
+/** 将存量 Markdown 转成 Tiptap 可编辑的 HTML，避免 Markdown 源码被当作单行纯文本显示。 */
+export function markdownToHtml(src: string): string {
+  const escape = (value: string) => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const inline = (value: string) => {
+    let out = escape(value);
+    out = out.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/gi, '<img src="$2" alt="$1">');
+    out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi, '<a href="$2">$1</a>');
+    out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    return out;
+  };
+  const lines = String(src ?? '').replace(/\r\n?/g, '\n').split('\n');
+  const blocks: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    if (/^```/.test(line)) {
+      const code: string[] = [];
+      i++;
+      while (i < lines.length && !/^```\s*$/.test(lines[i])) code.push(lines[i++]);
+      if (i < lines.length) i++;
+      blocks.push(`<pre><code>${escape(code.join('\n'))}</code></pre>`);
+      continue;
+    }
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
+    if (heading) {
+      blocks.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`);
+      i++;
+      continue;
+    }
+    if (UL_RE.test(line) || OL_RE.test(line)) {
+      const ordered = OL_RE.test(line);
+      const items: string[] = [];
+      while (i < lines.length && (ordered ? OL_RE.test(lines[i]) : UL_RE.test(lines[i]))) {
+        items.push(`<li>${inline(lines[i].replace(ordered ? OL_RE : UL_RE, ''))}</li>`);
+        i++;
+      }
+      blocks.push(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`);
+      continue;
+    }
+    const paragraph: string[] = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() && !HEADING_RE.test(lines[i]) && !/^```/.test(lines[i]) && !UL_RE.test(lines[i]) && !OL_RE.test(lines[i])) {
+      paragraph.push(lines[i++]);
+    }
+    blocks.push(`<p>${inline(paragraph.join('\n')).replace(/\n/g, '<br>')}</p>`);
+  }
+  return blocks.join('');
+}
+
 /** 把 Markdown 源码渲染为 React 元素数组（块级）。可直接放入 <div className="md md-render">。 */
 export function renderMarkdown(src: string): ReactNode[] {
   const lines = String(src ?? '').split(/\r?\n/);

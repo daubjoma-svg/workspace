@@ -30,7 +30,7 @@ export default function Modules() {
 
   // 业务模块编辑弹窗：editingBm 用 sentinel true 表示「新建模式」（null 关闭弹窗）
   const [editingBm, setEditingBm] = useState<BusinessModule | true | null>(null);
-  const [bmForm, setBmForm] = useState({ name: '', description: '' });
+  const [bmForm, setBmForm] = useState({ name: '', description: '', type: 'BACKEND' as 'FRONTEND' | 'BACKEND' });
   // 业务模块挂代码弹窗
   const [linkingBm, setLinkingBm] = useState<BusinessModule | null>(null);
   const [linkForm, setLinkForm] = useState({ code_module_id: '', path_prefix: '' });
@@ -107,7 +107,7 @@ export default function Modules() {
   const openBm = (bm: BusinessModule | null) => {
     // 新建模式：sentinel true；编辑模式：传 BusinessModule；关闭：null
     setEditingBm(bm ?? true);
-    setBmForm(bm ? { name: bm.name, description: bm.description || '' } : { name: '', description: '' });
+    setBmForm(bm ? { name: bm.name, description: bm.description || '', type: bm.type || 'BACKEND' } : { name: '', description: '', type: 'BACKEND' });
   };
   const saveBm = async () => {
     if (!bmForm.name.trim()) return toast('请填写业务模块名');
@@ -272,7 +272,7 @@ export default function Modules() {
                 <li key={bm.id} style={{ borderTop: '1px solid var(--border)', padding: '12px 0' }}>
                   <div className="row" style={{ alignItems: 'center' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{bm.name}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{bm.name} <span className={`tag ${bm.type === 'FRONTEND' ? 'tag-blue' : 'tag-grey'}`} style={{ marginLeft: 6 }}>{bm.type === 'FRONTEND' ? '前端' : '后端'}</span></div>
                       {bm.description && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{bm.description}</div>}
                     </div>
                     <button className="btn btn-sm" onClick={() => openBm(bm)}>编辑</button>
@@ -324,6 +324,11 @@ export default function Modules() {
             <div className="modal-b">
               <div className="form-row"><label>业务模块名 *</label>
                 <input className="input" value={bmForm.name} onChange={(e) => setBmForm({ ...bmForm, name: e.target.value })} placeholder="如：用户中心 / 订单中心 / 营销活动" autoFocus />
+              </div>
+              <div className="form-row"><label>模块类型 *</label>
+                <div className="chip-group">
+                  {(['FRONTEND', 'BACKEND'] as const).map((type) => <button type="button" key={type} className={`chip ${bmForm.type === type ? 'on' : ''}`} onClick={() => setBmForm({ ...bmForm, type })}>{type === 'FRONTEND' ? '前端' : '后端'}</button>)}
+                </div>
               </div>
               <div className="form-row"><label>描述</label>
                 <textarea className="input" rows={3} value={bmForm.description} onChange={(e) => setBmForm({ ...bmForm, description: e.target.value })} placeholder="可选" />

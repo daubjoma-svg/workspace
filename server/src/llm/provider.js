@@ -10,16 +10,16 @@ const { resolveCapability } = require('./capabilities');
 
 const SAFE_COLUMNS = 'id,name,type,base_url,model,enabled,capability,last_tested_at,last_test_error,created_at';
 
-function activeProvider() {
-  const p = db.prepare('SELECT * FROM ai_providers WHERE enabled=1 ORDER BY id LIMIT 1').get() || null;
+async function activeProvider() {
+  const p = (await db.one('SELECT * FROM ai_providers WHERE enabled=1 ORDER BY id LIMIT 1', [])) || null;
   // 有 enabled provider 但没 API Key → 返回 null（让 ai.js 走 mock 路径兜底，避免 LLM 调 401）
   // 例外：trae-cli 走本地 traecli 进程，无 key 也可用（本机已登录态），但填了 trae-lt-xxx 更稳
   if (p && !p.api_key_enc && !p.api_key && p.type !== 'trae-cli') return null;
   return p;
 }
 
-function findById(id) {
-  return db.prepare('SELECT * FROM ai_providers WHERE id=?').get(id) || null;
+async function findById(id) {
+  return (await db.one('SELECT * FROM ai_providers WHERE id=?', [id])) || null;
 }
 
 /** 解密 api_key。密文损坏或主密钥变更时返回空串，由调用方走降级而非崩溃（风险 R4） */
@@ -51,15 +51,17 @@ function toPublic(provider) {
   };
 }
 
-function listPublic() {
-  return db.prepare(`SELECT ${SAFE_COLUMNS},api_key_enc,api_key FROM ai_providers ORDER BY id`)
-    .all()
+async function listPublic() {
+  return (await db.many(
+    `SELECT ${SAFE_COLUMNS},api_key_enc,api_key FROM ai_providers ORDER BY id`,
+    []
+  ))
     .map(toPublic);
 }
 
 /** 全量（含 disabled 与密钥指针），供健康检测遍历 */
-function listAll() {
-  return db.prepare('SELECT * FROM ai_providers ORDER BY id').all();
+async function listAll() {
+  return await db.many('SELECT * FROM ai_providers ORDER BY id', []);
 }
 
 module.exports = { SAFE_COLUMNS, activeProvider, findById, resolveApiKey, toPublic, listPublic, listAll };

@@ -16,39 +16,39 @@ const REQUEST_TIMEOUT_MS = Number(process.env.GITLAB_TIMEOUT_MS || 30000);
 let tokenOverride = '';
 
 /** 读取配置（token 为解密后的明文，仅用于发起请求，不得进日志/响应体） */
-function getGitlabCfg() {
-  const enc = getSetting(TOKEN_ENC_KEY, '') || '';
-  const legacy = getSetting(TOKEN_KEY, '') || '';
+async function getGitlabCfg() {
+  const enc = (await getSetting(TOKEN_ENC_KEY, '')) || '';
+  const legacy = (await getSetting(TOKEN_KEY, '')) || '';
   const { value, source } = secret.readSecret(enc, legacy, logger, { scope: 'gitlab.token' });
   return {
-    baseUrl: (getSetting(BASE_URL_KEY, '') || '').replace(/\/+$/, ''),
+    baseUrl: ((await getSetting(BASE_URL_KEY, '')) || '').replace(/\/+$/, ''),
     token: tokenOverride || value,
     tokenSource: tokenOverride ? 'module' : source,
   };
 }
 
 /** 写入配置：token 一律加密落 gitlab.token_enc，明文列清空 */
-function setGitlabCfg({ base_url, token }) {
-  if (base_url != null) setSetting(BASE_URL_KEY, base_url);
+async function setGitlabCfg({ base_url, token }) {
+  if (base_url != null) await setSetting(BASE_URL_KEY, base_url);
   if (token != null && !secret.isMaskSentinel(token)) {
     if (token === '') {
-      setSetting(TOKEN_ENC_KEY, '');
-      setSetting(TOKEN_KEY, '');
+      await setSetting(TOKEN_ENC_KEY, '');
+      await setSetting(TOKEN_KEY, '');
     } else {
-      setSetting(TOKEN_ENC_KEY, secret.encrypt(token));
-      setSetting(TOKEN_KEY, '');
+      await setSetting(TOKEN_ENC_KEY, secret.encrypt(token));
+      await setSetting(TOKEN_KEY, '');
     }
   }
 }
 
-function maskedCfg() {
-  const c = getGitlabCfg();
+async function maskedCfg() {
+  const c = await getGitlabCfg();
   return { base_url: c.baseUrl, token_set: !!c.token, token: secret.mask(!!c.token) };
 }
 
 /** GitLab API v4 请求。带超时，非 2xx 抛错（错误体截断，避免把仓库内容灌进日志） */
 async function gl(pathname, init = {}) {
-  const { baseUrl, token } = getGitlabCfg();
+  const { baseUrl, token } = await getGitlabCfg();
   if (!baseUrl || !token) throw new Error('请先在「模块管理」中配置 GitLab 地址与 Token');
   const started = Date.now();
   let res;
@@ -153,7 +153,7 @@ async function fetchArchiveViaGitClone(projectId, ref, subPath = '', token = '')
     const fs = require('fs');
     const os = require('os');
     const path = require('path');
-    const { baseUrl, token: effToken } = getGitlabCfg();
+    const { baseUrl, token: effToken } = await getGitlabCfg();
     if (!effToken) throw new Error('请先在「模块管理」中配置 GitLab 地址与 Token');
     // 取项目 http_url_to_repo（带 namespace）
     const projRes = await gl(`/projects/${encodeURIComponent(projectId)}`);

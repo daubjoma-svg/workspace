@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>课程表 · 重设计原型</title>
+<style>
+  :root{
+    --ink:#161A2E; --ink2:#4A5170; --muted:#9AA1B9;
+    --line:#EDF0F7; --line2:#E2E7F2; --line3:#F6F8FC;
+    --violet:#5A5AD6; --violet2:#7C5CFF;
+    --amber-ink:#8A5205; --amber-line:#E9A94A; --amber-tint:#FFF4E1;
+    --green:#1FA97A; --now:#EF4E6A;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    color:var(--ink);-webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(1200px 620px at 18% -12%, #E7EBFA 0%, transparent 60%),
+      radial-gradient(900px 600px at 112% 8%, #FDF0E3 0%, transparent 55%),
+      #EEF1F7;
+    min-height:100vh;display:grid;place-items:center;padding:24px;
+  }
+
+  .phone{
+    position:relative;width:430px;height:864px;max-height:96vh;
+    background:#FBFCFE;border-radius:40px;overflow:hidden;
+    display:flex;flex-direction:column;
+    box-shadow:0 40px 90px rgba(22,26,46,.28), 0 0 0 1px rgba(22,26,46,.05);
+  }
+
+  /* ---------- App bar ---------- */
+  .appbar{display:flex;align-items:flex-start;gap:12px;padding:18px 18px 4px}
+  .appbar .title{font-size:19px;font-weight:800;margin:0;letter-spacing:.01em}
+  .appbar .sub{font-size:11px;color:var(--muted);margin-top:3px}
+  .appbar .actions{margin-left:auto;display:flex;gap:8px}
+  .iconbtn{
+    width:32px;height:32px;border-radius:11px;background:#fff;border:1px solid var(--line);
+    display:grid;place-items:center;color:#5B6180;box-shadow:0 4px 10px rgba(22,26,46,.05);
+  }
+
+  /* ---------- Top card: week + legend ---------- */
+  .topcard{
+    background:#fff;margin:10px 10px 0;border-radius:18px;
+    padding:10px 8px 12px;box-shadow:0 8px 22px rgba(22,26,46,.06);
+  }
+  .weekbar{display:grid;grid-template-columns:44px repeat(7,1fr)}
+  .wd{display:flex;flex-direction:column;align-items:center;gap:5px;padding-top:4px}
+  .wd .w{font-size:10px;color:var(--muted)}
+  .wd .d{
+    position:relative;width:30px;height:30px;border-radius:50%;
+    display:grid;place-items:center;font-size:13px;font-weight:600;color:var(--ink2);
+  }
+  .wd .d .dot{
+    position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);
+    width:4px;height:4px;border-radius:50%;background:var(--violet2);opacity:.75;
+  }
+  .wd.today .w{color:var(--violet);font-weight:700}
+  .wd.today .d{background:linear-gradient(155deg,var(--violet),var(--violet2));color:#fff;box-shadow:0 8px 16px rgba(90,90,214,.34)}
+  .wd.today .d .dot{background:#fff;opacity:.9}
+
+  .legend{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    margin:8px 10px 0;padding-top:10px;border-top:1px dashed var(--line2);
+    font-size:11px;color:var(--ink2);
+  }
+  .lg{display:inline-flex;align-items:center;gap:6px}
+  .swatch{width:16px;height:13px;border-radius:4px;flex:none}
+  .swatch.onhour{background:linear-gradient(155deg,var(--violet),var(--violet2));box-shadow:0 3px 7px rgba(90,90,214,.3)}
+  .swatch.half{background:var(--amber-tint);border:2px solid var(--amber-line)}
+  .tickdot{width:14px;height:14px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-size:8px;flex:none}
+  .legend .hint{margin-left:auto;color:var(--muted)}
+
+  /* ---------- Schedule ---------- */
+  .scroller{
+    flex:1;margin:12px 8px 0;background:#fff;border-radius:18px;
+    box-shadow:0 8px 22px rgba(22,26,46,.06);overflow:auto;position:relative;
+  }
+  .scroller::-webkit-scrollbar{width:0}
+  .sched{position:relative;display:grid;grid-template-columns:44px 1fr;margin-top:10px;padding-bottom:14px}
+  .timecol{position:relative;height:704px}
+  .timecol .tl{
+    position:absolute;right:9px;transform:translateY(-50%);
+    font-size:10px;color:var(--muted);letter-spacing:.02em;
+  }
+  .days{
+    position:relative;height:704px;
+    background-image:
+      linear-gradient(to right, var(--line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--line) 1px, transparent 1px),
+      linear-gradient(to bottom, transparent 31px, var(--line3) 31px, var(--line3) 32px, transparent 32px);
+    background-size:calc(100% / 7) 100%, 100% 64px, 100% 64px;
+  }
+
+  /* lunch band */
+  .lunch{
+    position:absolute;left:0;right:0;height:64px;z-index:1;
+    display:flex;align-items:center;gap:9px;padding:0 12px 0 52px;
+    background:linear-gradient(90deg,#FFFDF7,#FFF5E4);
+    border-top:1px dashed #F1D9AE;border-bottom:1px dashed #F1D9AE;
+    color:#9A7333;font-size:11px;
+  }
+  .lunch .bar{width:3px;height:16px;border-radius:3px;background:#E9C27E;flex:none}
+  .lunch b{font-weight:700}
+  .lunch .right{margin-left:auto;color:#B08A3E;white-space:nowrap}
+
+  /* now line */
+  .nowline{position:absolute;left:0;right:0;height:0;border-top:2px solid var(--now);z-index:6}
+  .nowline::before{
+    content:"";position:absolute;left:-4px;top:-5px;width:8px;height:8px;border-radius:50%;
+    background:var(--now);box-shadow:0 0 0 3px rgba(239,78,106,.16);
+  }
+
+  /* ---------- Cards ---------- */
+  .card{
+    position:absolute;z-index:3;border-radius:12px;padding:4px;
+    display:flex;flex-direction:column;gap:3px;overflow:hidden;
+    transition:transform .16s ease, box-shadow .16s ease;
+    animation:rise .34s cubic-bezier(.22,.9,.3,1) backwards;
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  .card:hover{transform:translateY(-2px)}
+  .card::after{
+    content:"";position:absolute;right:-10px;bottom:-12px;width:40px;height:40px;border-radius:50%;
+    opacity:.10;pointer-events:none;
+  }
+
+  /* 整点：实心渐变，落格扎实 */
+  .card.onhour{
+    background:linear-gradient(155deg,var(--violet) 0%,var(--violet2) 100%);
+    color:#fff;border:2px solid transparent;
+    box-shadow:0 10px 20px rgba(90,90,214,.28);
+  }
+  .card.onhour::after{background:#fff}
+  /* 半点：白/奶油底 + 琥珀描边，错格轻盈 */
+  .card.half{
+    background:linear-gradient(160deg,#FFFDF8,var(--amber-tint));
+    color:var(--amber-ink);border:2px solid var(--amber-line);
+    box-shadow:0 8px 16px rgba(233,169,74,.18);
+  }
+  .card.half::after{background:linear-gradient(90deg,var(--amber-line) 50%,transparent 50%)}
+
+  .card .chip{
+    align-self:flex-start;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+    font-size:9px;font-weight:800;letter-spacing:.01em;
+    padding:1px 3px;border-radius:999px;white-space:nowrap;
+  }
+  .card.onhour .chip{background:rgba(255,255,255,.24);color:#fff}
+  .card.half .chip{background:#FBE6C2;color:var(--amber-ink)}
+
+  .card .name{font-size:12px;font-weight:800;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .card .meta{
+    margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:2px;
+    font-size:9px;font-weight:700;line-height:1;
+  }
+  .card .tag{padding:2px 4px;border-radius:5px;white-space:nowrap}
+  .card.onhour .tag{background:rgba(255,255,255,.18);color:#fff}
+  .card.half .tag{background:#FDEBCB;color:var(--amber-ink)}
+  .card .ok{width:12px;height:12px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:8px;background:var(--green);color:#fff;box-shadow:0 2px 5px rgba(31,169,122,.35)}
+
+  .card.tight .name{display:none}
+  .card.mini .name,.card.mini .meta{display:none}
+
+  @media (prefers-reduced-motion:reduce){.card{animation:none}}
+
+  /* ---------- Tab bar ---------- */
+  .tabbar{
+    display:flex;border-top:1px solid var(--line);background:#fff;
+    padding:9px 0 16px;margin-top:12px;
+  }
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--muted)}
+  .tab .ic{font-size:17px;line-height:1}
+  .tab.active{color:var(--violet);font-weight:800}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="appbar">
+    <div>
+      <h1 class="title">课程表</h1>
+      <div class="sub" id="subtitle"></div>
+    </div>
+    <div class="actions">
+      <div class="iconbtn">⌕</div>
+      <div class="iconbtn">＋</div>
+    </div>
+  </div>
+
+  <div class="topcard">
+    <div class="weekbar" id="weekbar"></div>
+    <div class="legend">
+      <span class="lg"><span class="swatch onhour"></span>整点开课</span>
+      <span class="lg"><span class="swatch half"></span>半点开课</span>
+      <span class="lg"><span class="tickdot">✓</span>已上完</span>
+      <span class="hint">按开课时刻区分</span>
+    </div>
+  </div>
+
+  <div class="scroller">
+    <div class="sched">
+      <div class="timecol" id="timecol"></div>
+      <div class="days" id="days"></div>
+      <div class="lunch" id="lunch">
+        <span class="bar"></span><b>午间休息 12:00 – 13:00</b>
+        <span class="right">下午 13:00 课程开启</span>
+      </div>
+    </div>
+  </div>
+
+  <nav class="tabbar">
+    <div class="tab active"><span class="ic">▤</span>课表</div>
+    <div class="tab"><span class="ic">☺</span>我的</div>
+  </nav>
+</div>
+
+<script>
+(function(){
+  var HOUR_H = 64, START = 8, END = 19, COLS = 7;
+  var toMin = function(t){ var p = t.split(':'); return (+p[0])*60 + (+p[1]); };
+
+  var CLASSES = [
+    { day:0, start:'08:00', end:'09:30', teacher:'胡伟', subject:'英语', done:true },
+    { day:1, start:'10:00', end:'11:00', teacher:'李娜', subject:'数学', done:true },
+    { day:2, start:'09:30', end:'10:30', teacher:'胡伟', subject:'英语', done:true },
+    { day:2, start:'13:00', end:'14:00', teacher:'王强', subject:'物理' },
+    { day:3, start:'08:30', end:'09:30', teacher:'赵敏', subject:'语文', done:true },
+    { day:3, start:'13:30', end:'15:00', teacher:'胡伟', subject:'英语' },
+    { day:3, start:'15:30', end:'17:00', teacher:'胡伟', subject:'英语' },
+    { day:4, start:'14:00', end:'15:30', teacher:'胡伟', subject:'英语' },
+    { day:4, start:'16:00', end:'17:30', teacher:'陈晨', subject:'化学' },
+    { day:5, start:'09:00', end:'10:30', teacher:'刘洋', subject:'生物' },
+    { day:6, start:'10:30', end:'12:00', teacher:'孙悦', subject:'数学' }
+  ];
+
+  var now = new Date();
+  var todayIdx = (now.getDay() + 6) % 7;
+  var monday = new Date(now); monday.setDate(now.getDate() - todayIdx); monday.setHours(0,0,0,0);
+  var wnames = ['一','二','三','四','五','六','日'];
+  var fmtDate = function(d){ return (d.getMonth()+1) + '月' + d.getDate() + '日'; };
+
+  document.getElementById('subtitle').textContent =
+    fmtDate(monday) + ' – ' + fmtDate(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+6)) +
+    ' · 本周共 ' + CLASSES.length + ' 节课';
+
+  var wb = document.getElementById('weekbar');
+  wb.appendChild(document.createElement('div'));
+  var perDay = {};
+  CLASSES.forEach(function(c){ perDay[c.day] = (perDay[c.day]||0) + 1; });
+  for (var i=0;i<COLS;i++){
+    var d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+i);
+    var cell = document.createElement('div');
+    cell.className = 'wd' + (i===todayIdx ? ' today' : '');
+    cell.innerHTML = '<span class="w">' + wnames[i] + '</span>' +
+      '<span class="d">' + d.getDate() + (perDay[i] ? '<span class="dot"></span>' : '') + '</span>';
+    wb.appendChild(cell);
+  }
+
+  var tc = document.getElementById('timecol');
+  for (var h=START; h<END; h++){
+    var lbl = document.createElement('div');
+    lbl.className = 'tl';
+    lbl.style.top = ((h*60 - START*60) * HOUR_H / 60) + 'px';
+    lbl.textContent = (h<10?'0':'') + h + ':00';
+    tc.appendChild(lbl);
+  }
+
+  var days = document.getElementById('days');
+  var dayStart = START*60;
+  var colW = 100/COLS;
+  CLASSES.sort(function(a,b){ return a.day - b.day || toMin(a.start) - toMin(b.start); });
+  CLASSES.forEach(function(c, idx){
+    var s = toMin(c.start), e = toMin(c.end);
+    var onHour = (s % 60) === 0;
+    var hpx = (e - s) * HOUR_H / 60 - 6;
+    var el = document.createElement('div');
+    el.className = 'card ' + (onHour ? 'onhour' : 'half') + (hpx < 56 ? (hpx < 42 ? ' mini' : ' tight') : '');
+    el.style.animationDelay = (idx*42) + 'ms';
+    el.style.left = 'calc(' + (c.day*colW) + '% + 2px)';
+    el.style.width = 'calc(' + colW + '% - 4px)';
+    el.style.top = ((s - dayStart) * HOUR_H / 60 + 3) + 'px';
+    el.style.height = hpx + 'px';
+    el.innerHTML =
+      '<span class="chip">' + c.start + '</span>' +
+      '<span class="name">' + c.teacher + '</span>' +
+      '<span class="meta"><span class="tag">' + c.subject + '</span>' +
+      (c.done ? '<span class="ok">✓</span>' : '') + '</span>';
+    days.appendChild(el);
+  });
+
+  document.getElementById('lunch').style.top = ((12*60 - dayStart) * HOUR_H / 60) + 'px';
+
+  var nowMin = now.getHours()*60 + now.getMinutes();
+  if (nowMin >= START*60 && nowMin <= END*60){
+    var nl = document.createElement('div');
+    nl.className = 'nowline';
+    nl.style.top = ((nowMin - dayStart) * HOUR_H / 60) + 'px';
+    days.appendChild(nl);
+  }
+})();
+</script>
+</body>
+</html>

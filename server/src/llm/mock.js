@@ -36,6 +36,11 @@ function mockEvaluate(req, codeCtx) {
   const attention_points = attention
     ? ['需求边界仍需产品在评审时与 CSM 对齐', '涉及既有数据兼容，需评估历史数据处理', '建议在 PRD 中明确异常场景与验收口径']
     : [];
+  // 标题含 NEEDS_INFO 时返回阻断性问题，便于端到端验证「评估节点挂起等需求发起人补充」。
+  const needsInfo = /NEEDS_INFO|补充信息/i.test(req.title);
+  const questions = needsInfo
+    ? ['该需求的目标使用对象是谁（哪些角色/部门）？', '验收标准是什么（达到什么效果算完成）？']
+    : [];
   const impact_scope = hasCtx
     ? codeCtx.modules.map((m) => ({
       module: `${m.platform} (${m.module_key}@${m.branch || 'main'})`,
@@ -48,6 +53,11 @@ function mockEvaluate(req, codeCtx) {
       { module: '前端-页面展示', files: ['web/src/pages/*'], apis: [], tables: [], confidence: 0.6 },
     ];
   return {
+    summary: `该需求聚焦「${req.title || '当前问题'}」，${attention ? '需要先确认关键范围后再安排。' : '目标明确，可按常规迭代安排。'}`,
+    scheduling: {
+      status: attention ? 'NEEDS_CONFIRMATION' : 'READY',
+      advice: attention ? '建议先确认关注事项，再进入排期。' : '可按当前优先级进入常规排期。',
+    },
     rationality: {
       verdict,
       reason: hasCtx
@@ -58,6 +68,9 @@ function mockEvaluate(req, codeCtx) {
         : '当前系统已有相近模块可复用,建议在其上扩展而非新建。',
     },
     attention_points,
+    questions,
+    // 自评置信度：有阻断性问题时必然偏低（否则会被 engine 的 ≥0.8 门控直接放行）。
+    confidence: needsInfo ? 0.35 : (hasCtx ? 0.8 : 0.65),
     perspectives: {
       customer: `客户核心诉求:${req.title}。需关注交付后的可感知效果与验收口径。`,
       product: '建议在 PRD 中明确主流程、异常流程与边界 case,并与现有功能保持一致性。',
@@ -80,68 +93,66 @@ function mockPRD(req, evaluation) {
   const effort = evaluation?.effort ? `${evaluation.effort.min_days}-${evaluation.effort.max_days} 人日` : '待定';
   return `# ${req.title} — 产品需求文档
 
-## 1. 背景与目标
+## 1. 背景
 - 客户：${req.customer_name || '—'}
-- 原始诉求：${req.description}
+- 当前问题：${req.description}
 
-## 2. 用户故事与场景
-- 作为 **用户**，我希望 **${req.title}**，从而 **提升业务效率**。
+## 2. 目标
+- 解决上述问题，形成可验证的业务结果。
 
-## 3. 功能详述
-| # | 功能点 | 说明 | 边界 case |
-|---|--------|------|-----------|
-| 1 | 主流程 | 按需求描述实现主链路 | 空数据/重复提交 |
-| 2 | 异常处理 | 非法输入给出明确提示 | 并发、超时 |
+## 3. 业务流程
+1. 用户进入相关业务入口。
+2. 按需求配置或提交信息。
+3. 系统完成处理并反馈结果。
 
-## 4. 交互说明
-- 入口：现有菜单下新增入口。
-- 反馈：操作成功/失败均有明确提示。
+## 4. 影响范围与风险
+- 影响范围：需求涉及的业务模块及相关使用角色。
+- 风险：需求边界或存量数据影响需产品确认。
 
-## 5. 非功能要求
-- 性能：常规接口 < 1s。
-- 兼容：不影响既有数据。
+## 5. 验收标准
+- [ ] 主流程按需求描述完成。
+- [ ] 异常输入有明确提示且不产生错误数据。
+- [ ] 既有相关功能回归通过。
 
-## 6. 验收标准（AC）
-- [ ] 主流程按需求描述跑通。
-- [ ] 边界与异常场景处理正确。
-- [ ] 不引入回归问题。
-
-## 7. Out of Scope
-- 本期不包含与第三方系统的深度集成。
-
----
-> 改动等级：${evaluation?.level || '待定'}；预估工作量：${effort}（AI 初稿，供产品修改）
+## 6. 排期版本
+- 目标版本：${req.target_version || '待定'}
+- 预估工作量：${effort}
+- 前置条件：产品确认范围与验收口径。
 `;
 }
 
 function mockDevPrompt(req, prd, codeCtx) {
   const moduleSection = codeCtx?.modules?.length
-    ? `\n## 关联代码模块(真实快照)\n${codeCtx.modules.map((m) => `- **${m.platform}** (\`${m.module_key}\` @ ${m.branch || 'main'}, commit ${m.commit || '—'}):\n  - 建议改动集中在该模块的接口层与业务层\n  - 可复用现有 Controller/Service,避免新建`).join('\n')}\n`
+    ? codeCtx.modules.map((m) => `- ${m.platform}（${m.module_key}@${m.branch || 'main'}）`).join('\n')
     : '';
-  return `# 研发实现指引 — ${req.title}
+  return `# 研发 AI 执行提示词 — ${req.title}
 
-## 目标
-${req.description}
-${moduleSection}
-## 实现步骤拆解
-1. **接口层**:新增/修改对应 REST 接口,完成参数校验。
-2. **业务层**:实现核心业务逻辑,注意事务边界。
-3. **数据层**:如需表结构变更,先出 DDL 评审。
-4. **前端**:按 PRD 实现页面与交互。
+## 一、任务目标
+请解决「${req.title}」的问题，并在不改变既有业务语义的前提下完成可验证的优化。
 
-## 关键逻辑思路
-- 主流程:接收请求 → 校验 → 处理 → 返回。
-- 异常:统一错误码 + 友好提示。
+## 二、问题判断与查证结论
+- 当前为兜底提示词，尚未完成代码查证；请先确认是否存在全量加载、全量展示或保存后全量刷新。
+- 请确认现有列表接口是否已经支持分页、搜索和成员选中回显，再决定是否新增能力。
 
-## 兼容/性能/安全
-- 兼容:老数据需可正常读写。
-- 性能:避免 N+1 查询。
-- 安全:鉴权 + 参数校验防注入。
+## 三、推荐方案
+- 若服务端无分页：新增分页查询，前端按页加载并在搜索条件变化时重置页码。
+- 若服务端已有分页：优先复用，不新增重复接口。
+- 保存成功后仅更新本次变更的成员状态，避免重新加载全部成员。
 
-## 建议测试关注点
-- 正常流、边界流、异常流各至少 1 例。
+## 四、前端改动点与影响
+- 根据查证结果修改实际成员选择页面、列表状态与请求调用；处理搜索、翻页/滚动、跨页勾选和已有成员回显。
 
-> 可直接喂给 Cursor / Claude Code / Codex 作为实现上下文(mock 初稿${codeCtx?.modules?.length ? ',已含真实模块上下文' : ''})。
+## 五、后端改动点与影响
+- 仅在现有能力无法覆盖时调整成员列表查询与返回；保持旧调用方、权限和保存语义兼容。
+
+## 六、跨业务影响与兼容性
+- 检查同一成员选择或组织树能力的复用入口；${moduleSection || '未获得代码快照，需补充确认。'}
+
+## 七、实施步骤与验收
+1. 查证并记录根因。
+2. 按推荐方案实现最小改动。
+3. 验收大数据量、搜索、翻页/滚动、跨页勾选、保存、已有成员回显及复用场景回归。
+
 `;
 }
 

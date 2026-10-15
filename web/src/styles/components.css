@@ -158,6 +158,18 @@ a.jira-link:hover {
 .tbl tbody tr:nth-child(4) { animation-delay: 90ms; }
 .tbl tbody tr:nth-child(5) { animation-delay: 120ms; }
 
+/* 需求列表列数较多，表头保持单行并交由外层容器横向滚动，避免“当前节点”等短标题被拆行。 */
+.req-list-table { min-width: 1240px; }
+.req-list-table th { white-space: nowrap; }
+.req-list-table .req-list-title {
+  display: flex; align-items: center; min-width: 0; max-width: 360px;
+  font-weight: var(--w-annc); white-space: nowrap;
+}
+.req-list-table .req-list-title > span:first-child {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.req-list-table .req-list-title > .tag { flex: 0 0 auto; }
+
 /* ============ 标签 ============ */
 .tag {
   display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
@@ -258,6 +270,60 @@ a.jira-link:hover {
 .chip.sm { padding: 4px 11px; font-size: var(--text-xs); cursor: default; }
 .chip-dot { width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--good); box-shadow: 0 0 0 2px var(--success-wash); }
 .chip-dot.off { background: var(--text-3); box-shadow: none; }
+
+/* Jira 自动创建：作为字段辅助操作呈现，避免抢过主操作「保存指派」的视觉层级。 */
+.jira-assignment-field { margin-bottom: 0; }
+.jira-assignment-value { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.jira-assignment-value .input { min-width: 0; flex: 1; }
+.jira-assignment-link, .jira-assignment-plain {
+  display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 38px; flex: 1;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--panel); font-size: var(--text-sm);
+}
+.jira-assignment-link { color: var(--primary); text-decoration: none; }
+.jira-assignment-link:hover, .jira-assignment-link:focus-visible { border-color: var(--primary); background: var(--primary-weak); text-decoration: underline; }
+.jira-assignment-link svg, .jira-assignment-value .btn { flex: 0 0 auto; }
+.jira-assignment-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jira-assignment-plain { color: var(--text); }
+.jira-assignment-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.jira-assignment-actions > .btn:last-child { margin-left: auto; }
+@media (max-width: 640px) {
+  .jira-assignment-owners { grid-template-columns: minmax(0, 1fr); }
+  .jira-assignment-owners .form-row { min-width: 0; }
+}
+
+/* ============ 创建 Jira 弹窗 ============ */
+.modal.jira-create-modal { width: 720px; }
+.jira-create-modal .modal-b { padding: 20px 24px 24px; }
+.jira-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+.jira-form-grid .form-row { min-width: 0; margin: 0; }
+.jira-field-wide { grid-column: 1 / -1; }
+.jira-section, .jira-preview-details { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+.jira-section .section-title { margin-bottom: 14px; }
+.jira-required-label { margin: 20px 0 12px; font-size: var(--text-xs); font-weight: var(--w-emph); color: var(--text-2); }
+.jira-preview-details { color: var(--text-2); }
+.jira-preview-details summary { display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: var(--text-sm); font-weight: var(--w-emph); list-style: none; }
+.jira-preview-details summary::-webkit-details-marker { display: none; }
+.jira-preview-details[open] summary svg { transform: rotate(180deg); }
+/* 自动带入字段：两列卡片式预览，窄屏回落单列，避免长文本把行撑乱 */
+.jira-preview {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px;
+  margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 4px 14px; background: var(--panel-2);
+}
+.jira-preview-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 8px 0; font-size: var(--text-sm); border-bottom: 1px solid var(--border);
+}
+/* 描述整行铺满 */
+.jira-preview-wide { grid-column: 1 / -1; }
+.jira-preview-row > span:last-child { text-align: right; color: var(--text); word-break: break-word; }
+@media (max-width: 640px) {
+  .jira-create-modal .modal-b { padding: 18px; }
+  .jira-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .jira-preview { grid-template-columns: 1fr; }
+  .jira-preview-wide { grid-column: auto; }
+}
 
 /* ============ Markdown / 空态 ============ */
 .md { line-height: 1.75; font-size: var(--text-sm); white-space: pre-wrap; word-break: break-word; color: var(--text); }
@@ -390,6 +456,52 @@ a.jira-link:hover {
 /* 空状态 / 加载提示：居中灰色 */
 .ss-empty { padding: 14px 12px; text-align: center; color: var(--text-3); font-size: var(--text-xs); }
 
+/* ============ 客户名称组合框 CustomerInput（可选可输，面板复用 .ss-*） ============ */
+.ci-wrap { position: relative; width: 100%; }
+/* 给右侧 caret 让位，避免长客户名压到图标下 */
+.ci-input { padding-right: 34px; }
+.ci-caret {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; border: none; border-radius: var(--radius-sm);
+  background: none; color: var(--text-3); cursor: pointer;
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+.ci-caret:hover { color: var(--text); background: var(--surface-2); }
+.ci-caret:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ============ AI 评估「结论摘要」指标区 ============
+   三个指标（改动等级/预估工时/AI 预测置信度）+ 右侧结论标签。
+   统一「标签 / 数值 / 说明」三段式并用 end 对齐，保证大字号数值基线齐平；
+   说明缺失时由调用方补 &nbsp; 占位，避免各列高度不一致。 */
+.eval-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 14px;
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.eval-stat { padding-left: 14px; border-left: 2px solid var(--border); }
+.eval-stat:first-child { padding-left: 0; border-left: none; }
+.eval-stat .k {
+  font-size: var(--text-xs); color: var(--text-2); font-weight: var(--w-emph);
+  letter-spacing: var(--tracking-small); white-space: nowrap;
+}
+.eval-stat .v {
+  font-size: var(--text-2xl); font-weight: var(--w-annc); line-height: 1.2;
+  letter-spacing: var(--tracking-head); font-variant-numeric: tabular-nums;
+}
+.eval-stat .v .unit { margin-left: 3px; font-size: var(--text-sm); font-weight: 400; color: var(--text-2); }
+.eval-stat .sub { margin-top: 3px; font-size: var(--text-xs); color: var(--text-3); white-space: nowrap; }
+.eval-verdict { text-align: right; }
+.eval-verdict .sub { margin-top: 7px; font-size: var(--text-xs); color: var(--text-3); white-space: nowrap; }
+@media (max-width: 760px) {
+  .eval-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .eval-verdict { grid-column: 1 / -1; text-align: left; }
+  .eval-stat .sub, .eval-verdict .sub { white-space: normal; }
+}
+
 /* ============ AI 评估「注意事项」区块（契约 v2：attention_points） ============ */
 .attention-block {
   margin: 14px 0; padding: 12px 16px;
@@ -424,9 +536,11 @@ a.jira-link:hover {
 .test-done-bar svg { flex: 0 0 auto; }
 
 /* ============ 需求聊天工作室（ReqChat · .chat-* 命名空间） ============ */
-.chat { display: flex; flex-direction: column; }
+/* 撑满固定高度的容器（ReqDetail 右侧栏），内部 .chat-body 才能正确滚动而非被裁切 */
+.chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .chat-head {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  flex: 0 0 auto;
   padding: 12px 18px; border-bottom: 1px solid var(--border);
 }
 .chat-head > svg { flex: 0 0 auto; color: var(--primary); }
@@ -471,6 +585,36 @@ a.jira-link:hover {
   width: 100%; margin-top: 2px;
 }
 
+/* 待回答澄清徽标：常驻头部，配合「去聊天工作室澄清」强化目的地 */
+.chat-pending {
+  font-size: var(--text-xs); font-weight: var(--w-emph);
+  color: var(--warn-ink); background: var(--warn-wash);
+  padding: 1px 8px; border-radius: var(--radius-pill);
+}
+
+/* 「去澄清」定位反馈：工作室面板整体高亮 + 命中的澄清消息闪烁（不弹窗，直接引导视线） */
+#req-chat-panel { scroll-margin-top: 16px; }
+.chat-panel-focus {
+  border-radius: var(--radius);
+  animation: chatPanelFocus 2.4s var(--ease);
+}
+@keyframes chatPanelFocus {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  12%, 68% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 60%, transparent); }
+}
+.chat-msg.clarify-flash {
+  padding: 8px; margin: -8px; border-radius: var(--radius-md);
+  animation: clarifyMsgFlash 2.4s var(--ease);
+}
+@keyframes clarifyMsgFlash {
+  0%, 100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+  12%, 68% { background: var(--warn-wash); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 45%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-panel-focus { animation: none; box-shadow: 0 0 0 3px var(--primary-weak); }
+  .chat-msg.clarify-flash { animation: none; background: var(--warn-wash); }
+}
+
 /* AI 回答气泡：富文本（标题/列表/代码/路径高亮） */
 .chat-bubble.ai-rich { white-space: normal; }
 .chat-bubble.ai-rich .ai-h { margin: 6px 0 4px; font-size: var(--text-base); font-weight: var(--w-annc); color: var(--primary); }
@@ -486,8 +630,40 @@ a.jira-link:hover {
 .ai-chat-card .chat-body { max-height: 520px; }
 .ai-chat-card .chat-bubble.ai-rich { max-width: 100%; }
 
+/* AI 追问工具条：查询范围（前端/服务端）+ 待发截图 */
+.ai-chat-tools {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 18px 0;
+}
+.ai-scope {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+}
+.ai-scope-item {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--text-xs); color: var(--text-2); cursor: pointer;
+  padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.ai-scope-item input { margin: 0; cursor: pointer; }
+.ai-chat-imgs { display: flex; flex-wrap: wrap; gap: 8px; }
+.ai-chat-img-wrap { position: relative; display: inline-block; }
+.ai-chat-img {
+  max-width: 96px; max-height: 96px; width: auto; height: auto;
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+  object-fit: contain; display: block;
+}
+.ai-chat-img-del {
+  position: absolute; top: -6px; right: -6px;
+  width: 18px; height: 18px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: none; cursor: pointer;
+  background: var(--danger-ink, #d33); color: #fff; font-size: 12px;
+}
+.ai-chat-img-del:disabled { opacity: 0.5; cursor: default; }
+
 .chat-input {
   display: flex; align-items: flex-end; gap: 10px;
+  flex: 0 0 auto;
   padding: 12px 18px; border-top: 1px solid var(--border);
 }
 .chat-input .input { flex: 1; }

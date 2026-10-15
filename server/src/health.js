@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
-const { db } = require('./db');
+const db = require('./db');
 const secret = require('./crypto/secret');
 const logger = require('./logger');
 
@@ -25,9 +25,9 @@ let masterKeyStatus = 'unknown';
 function setMasterKeyStatus(status) { masterKeyStatus = status; }
 
 /** db 探针：执行真实查询，不能只判断对象存在 */
-function checkDb() {
+async function checkDb() {
   try {
-    const row = db.prepare('SELECT 1 AS ok').get();
+    const row = await db.one('SELECT 1 AS ok', []);
     return row && row.ok === 1 ? 'ok' : 'fail';
   } catch (e) {
     logger.error('health_db_fail', { reason: e.message });
@@ -46,8 +46,8 @@ function checkMasterKey() {
   return masterKeyStatus === 'mismatch' ? 'fail' : 'ok';
 }
 
-function collect() {
-  const checks = { db: checkDb(), dist: checkDist(), master_key: checkMasterKey() };
+async function collect() {
+  const checks = { db: await checkDb(), dist: checkDist(), master_key: checkMasterKey() };
   const healthy = Object.values(checks).every((v) => v === 'ok');
   return {
     status: healthy ? 'ok' : 'degraded',
@@ -58,8 +58,8 @@ function collect() {
 }
 
 const health = express.Router();
-health.get('/health', (req, res) => {
-  const body = collect();
+health.get('/health', async (req, res) => {
+  const body = await collect();
   if (body.status !== 'ok') logger.warn('health_degraded', body.checks);
   res.status(body.status === 'ok' ? 200 : 503).json(body);
 });

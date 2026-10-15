@@ -25,16 +25,16 @@ let tokenCache = { appId: null, appSecret: null, token: null, expiresAt: 0 };
 
 /* ---------- 配置 ---------- */
 
-function getFeishuCfg() {
-  const appId = (getSetting(APP_ID_KEY, '') || '').trim();
+async function getFeishuCfg() {
+  const appId = ((await getSetting(APP_ID_KEY, '')) || '').trim();
   // app_secret 以 AES-256-GCM 密文落 settings；解不开按未配置处理，不崩服务
-  const appSecret = secret.tryDecrypt(getSetting(APP_SECRET_KEY, '') || '', logger, { scope: 'feishu.app_secret' }) || '';
+  const appSecret = secret.tryDecrypt((await getSetting(APP_SECRET_KEY, '')) || '', logger, { scope: 'feishu.app_secret' }) || '';
   return { appId, appSecret };
 }
 
 /** GET 响应用：只回 app_id 与是否已配置，绝不返回 app_secret 明文 */
-function maskedFeishuCfg() {
-  const { appId, appSecret } = getFeishuCfg();
+async function maskedFeishuCfg() {
+  const { appId, appSecret } = await getFeishuCfg();
   return { app_id: appId, configured: !!(appId && appSecret) };
 }
 
@@ -42,10 +42,10 @@ function maskedFeishuCfg() {
  * 保存配置：app_id 明文存；app_secret 加密存。
  * app_secret 为空串 / 前端 MASK 哨兵时保留原值（编辑表单只改 app_id 的场景）。
  */
-function setFeishuConfig({ app_id, app_secret }) {
-  if (app_id != null) setSetting(APP_ID_KEY, String(app_id).trim());
+async function setFeishuConfig({ app_id, app_secret }) {
+  if (app_id != null) await setSetting(APP_ID_KEY, String(app_id).trim());
   if (app_secret != null && app_secret !== '' && !secret.isMaskSentinel(app_secret)) {
-    setSetting(APP_SECRET_KEY, secret.encrypt(app_secret));
+    await setSetting(APP_SECRET_KEY, secret.encrypt(app_secret));
   }
 }
 
@@ -165,9 +165,9 @@ async function sendFeishuToUser(userId, event, ctx, title, content) {
     ctx = null;
   }
   try {
-    const u = db.prepare('SELECT feishu_key FROM users WHERE id=?').get(userId);
+    const u = await db.one('SELECT feishu_key FROM users WHERE id=?', [userId]);
     if (!u || !u.feishu_key) return; // 未绑定，静默跳过
-    const cfg = getFeishuCfg();
+    const cfg = await getFeishuCfg();
     if (!cfg.appId || !cfg.appSecret) {
       logger.debug('feishu_not_configured', { userId });
       return; // 应用未配置，静默跳过

@@ -11,8 +11,7 @@ import { ConfirmModal } from '../../components/ConfirmModal';
  *    "启用" = 该 agent 下任意一个 provider 处于 enabled 状态
  *  - 下方模型组：选中一个 Agent 后展示该 Agent 下的所有 model（来自 ai_providers 表）
  *    每行：开关 + 模型 ID + 显示名 + 推理档下拉 + 删除
- *  - 「+ 添加模型」弹 ProviderModal
- *  - 「> 从 CLI 检测」扫描本地已安装的 claude/codex/kimi CLI 工具
+ *  - 「> 从 CLI 检测」扫描本地已安装的 claude/codex/kimi CLI 工具（新增模型仅走此入口）
  *  - 「保存模型组」即时保存（每次改动直接 PUT/POST/DELETE）
  */
 
@@ -55,8 +54,8 @@ export default function AiProviders() {
   /** 把 provider 按 agent id 归类（与下方 grouped 一致），供默认选中 + 检测用 */
   const agentOf = (p: any): string | null => {
     if (p.type === 'anthropic') return 'claude';
+    if (p.type === 'trae-cli' || p.name?.toLowerCase().includes('trae')) return 'trae';
     if (p.base_url?.includes('moonshot') || p.base_url?.includes('kimi') || p.name?.toLowerCase().includes('kimi')) return 'kimi';
-    if (p.name?.toLowerCase().includes('trae')) return 'trae';
     return 'codex';
   };
   const load = async () => {
@@ -81,8 +80,8 @@ export default function AiProviders() {
     list.forEach((p) => {
       // 按 type 匹配
       if (p.type === 'anthropic') m.claude.push(p);
+      else if (p.type === 'trae-cli' || p.name?.toLowerCase().includes('trae')) m.trae.push(p);
       else if (p.base_url?.includes('moonshot') || p.base_url?.includes('kimi') || p.name?.toLowerCase().includes('kimi')) m.kimi.push(p);
-      else if (p.name?.toLowerCase().includes('trae')) m.trae.push(p);
       else m.codex.push(p); // 默认 openai-compat 归到 codex
     });
     return m;
@@ -126,7 +125,8 @@ export default function AiProviders() {
     setDelP(null); load(); toast('已删除');
   };
 
-  // 从 CLI 检测：扫描本地已安装的 claude/codex/kimi，自动新增 provider
+  // 从 CLI 检测：扫描本地已安装的 claude/codex/kimi/traecli，自动新增 provider。
+  // traecli 会 `traecli models` 枚举本机可用模型，每个模型建一个 trae-cli provider。
   const scanCli = async () => {
     setScanning(true);
     try {
@@ -134,15 +134,43 @@ export default function AiProviders() {
       const agents: any[] = r.agents || [];
       const installed = agents.filter((a) => a.installed);
       if (installed.length === 0) {
-        toast('本地未检测到 claude/codex/kimi CLI', 'error');
+        toast('本地未检测到 claude / codex / kimi / traecli CLI', 'error');
         return;
       }
-      // 为每个 installed agent 创建一个 provider（如果还没有相同 type 的）
       let created = 0;
+      let removed = 0;
       for (const a of installed) {
         const agentDef = AGENTS.find((x) => x.id === a.id);
         if (!agentDef) continue;
-        const exists = grouped[a.id]?.some((p) => p.name === `${a.label} (本地)` || p.base_url === agentDef.baseUrl);
+        const existing = grouped[a.id] || [];
+        // traecli：按枚举出的模型逐个建 provider（模型名可能含空格，用 type+model 去重）
+        const models: string[] = Array.isArray(a.models) ? a.models : [];
+        if (models.length > 0) {
+          // 历史遗留的空 model 占位 provider（旧版本重复点击产生）先复用，避免出现无名空行
+          const placeholders = existing.filter((p) => p.type === 'trae-cli' && !String(p.model || '').trim());
+          const known = new Set(existing.filter((p) => p.type === 'trae-cli' && String(p.model || '').trim()).map((p) => p.model));
+          const pending = models.filter((m) => !known.has(m));
+          let reused = 0;
+          for (const model of pending) {
+            if (reused < placeholders.length) {
+              await api.put(`/api/admin/ai-providers/${placeholders[reused++].id}`, { name: `${a.label} · ${model}`, model });
+            } else {
+              await api.post('/api/admin/ai-providers', {
+                name: `${a.label} · ${model}`,
+                type: 'trae-cli',
+                base_url: '',
+                model,
+                enabled: 0,
+              });
+            }
+            created += 1;
+          }
+          // 模型数少于占位数时，多余的占位直接删掉，不留空行
+          for (const ph of placeholders.slice(reused)) { await api.del(`/api/admin/ai-providers/${ph.id}`); removed += 1; }
+          continue;
+        }
+        // 其他 CLI：只建一个默认 provider
+        const exists = existing.some((p) => p.name === `${a.label} (本地 CLI)` || (!!agentDef.baseUrl && p.base_url === agentDef.baseUrl));
         if (exists) continue;
         await api.post('/api/admin/ai-providers', {
           name: `${a.label} (本地 CLI)`,
@@ -153,7 +181,9 @@ export default function AiProviders() {
         });
         created += 1;
       }
-      toast(created > 0 ? `已添加 ${created} 个 CLI Provider` : '本地 CLI 已全部配置');
+      toast(created > 0
+        ? `已接入 ${created} 个模型${removed ? `，清理 ${removed} 个空配置` : ''}`
+        : '本地 CLI 已全部配置');
       load();
     } catch (e: any) {
       toast(e.message || 'CLI 检测失败', 'error');
@@ -202,7 +232,7 @@ export default function AiProviders() {
           <div>
             <b>AI 配置</b>
             <div className="muted" style={{ marginTop: 4 }}>
-              配置不同 Agent（Claude/Codex/Kimi）的接入点和模型；
+              配置不同 Agent（Claude/Codex/Trae/Kimi）的接入点和模型；
               启用的 Agent 出现在新建任务、工作流等选择器里。API Key 加密存储，密文仅在点「小眼睛」时临时展示。
             </div>
           </div>
@@ -295,7 +325,7 @@ export default function AiProviders() {
                   {count > 0
                     ? (enabled && !hasKey
                         ? `⚠️ 已启用但未配 API Key（点击配 Key 后 AI 才能真跑）`
-                        : `${count} 个模型${hasKey ? ' · 已配 Key' : ''}`)
+                        : `${count} 个模型${a.id === 'trae' ? ' · 本机 CLI' : hasKey ? ' · 已配 Key' : ''}`)
                     : '暂无模型'}
                 </div>
               </div>
@@ -375,15 +405,12 @@ export default function AiProviders() {
           ))}
           {currentAgentModels.length === 0 && (
             <div className="muted" style={{ padding: '24px 12px', textAlign: 'center' }}>
-              {AGENTS.find((a) => a.id === selectedAgent)?.label} 下还没有模型，点下方「+ 添加模型」接入
+              {AGENTS.find((a) => a.id === selectedAgent)?.label} 下还没有模型，可点右上角「从 CLI 检测」自动接入
             </div>
           )}
         </div>
 
-        <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
-          <button className="btn btn-sm" onClick={addModelForSelected}>
-            <Icon name="plus" size={16} /> 添加模型
-          </button>
+        <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
           <button className="btn btn-primary btn-sm" onClick={() => toast('模型组已即时保存（每次改动自动入库）')}>
             保存模型组
           </button>

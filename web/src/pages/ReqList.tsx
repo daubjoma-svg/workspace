@@ -13,6 +13,8 @@ import { ReqEditModal } from '../components/ReqEditModal';
 type View = 'table' | 'kanban';
 const PAGE_SIZE = 20;
 
+const isJiraUrl = (value: string | null | undefined) => /^https?:\/\//i.test(String(value || ''));
+
 const VIEW_OPTS: { value: View; label: string; icon: IconName }[] = [
   { value: 'table', label: '表格', icon: 'list' },
   { value: 'kanban', label: '看板', icon: 'board' },
@@ -31,7 +33,8 @@ const PRIO_OPTS = [['', '全部紧急度'], ['P0', 'P0'], ['P1', 'P1'], ['P2', '
 
 const ownersOf = (r: Requirement) => [
   r.po_name && `产:${r.po_name}`,
-  r.rd_name && `研:${r.rd_name}`,
+  r.rd_name && `后:${r.rd_name}`,
+  r.fe_name && `前:${r.fe_name}`,
   r.qa_name && `测:${r.qa_name}`,
 ].filter(Boolean).join(' ');
 
@@ -183,7 +186,7 @@ export default function ReqList({ onOpen, onCreate }: { onOpen: (id: number) => 
 
       {view === 'table' ? (
         <div className="card tbl-wrap">
-          <table className="tbl">
+          <table className="tbl req-list-table">
             <thead>
               <tr>
                 {isAdmin && (
@@ -193,12 +196,12 @@ export default function ReqList({ onOpen, onCreate }: { onOpen: (id: number) => 
                       onChange={(e) => setSel(e.target.checked ? new Set(filtered.map((r) => r.id)) : new Set())} />
                   </th>
                 )}
-                <th>单号</th><th>Jira</th><th>标题</th><th>客户</th><th>等级</th><th>状态</th><th>当前节点</th><th>负责人</th><th>更新</th><th>操作</th>
+                <th>单号</th><th>Jira</th><th>标题</th><th>客户</th><th>目标版本</th><th>等级</th><th>状态</th><th>当前节点</th><th>负责人</th><th>更新</th><th>操作</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={isAdmin ? 11 : 10}>
+                <tr><td colSpan={isAdmin ? 12 : 11}>
                   <EmptyState icon="search" title="没有匹配的需求"
                     reason="当前筛选条件下没有结果，放宽状态或等级筛选再试。" />
                 </td></tr>
@@ -220,7 +223,7 @@ export default function ReqList({ onOpen, onCreate }: { onOpen: (id: number) => 
                     )}
                     <td className="muted mono">{r.req_no}</td>
                     <td className="mono">
-                      {r.jira_url ? (
+                      {r.jira_url ? (isJiraUrl(r.jira_url) ? (
                         <a
                           href={r.jira_url}
                           target="_blank"
@@ -232,14 +235,19 @@ export default function ReqList({ onOpen, onCreate }: { onOpen: (id: number) => 
                           <Icon name="link" size={16} /> {jiraLabel(r.jira_url)}
                         </a>
                       ) : (
+                        <span className="tag tag-grey" title="Jira 单号">{r.jira_url}</span>
+                      )) : (
                         <span className="muted">—</span>
                       )}
                     </td>
-                    <td style={{ fontWeight: 600 }}>
-                      {r.title}
-                      {openCount(r) > 0 && <span className="tag tag-orange" style={{ marginLeft: 6 }}>待补充</span>}
+                    <td>
+                      <div className="req-list-title" title={r.title}>
+                        <span>{r.title}</span>
+                        {openCount(r) > 0 && <span className="tag tag-orange" style={{ marginLeft: 6 }}>待补充</span>}
+                      </div>
                     </td>
                     <td className="text-2">{r.customer_name || '—'}</td>
+                    <td className="muted nowrap mono">{r.target_version || '待定'}</td>
                     <td><LevelBadge level={r.level} /></td>
                     <td><span className={`tag tag-${statusTone}`}>{statusText}</span></td>
                     <td className="muted">{r.status === 'DONE' ? '—' : nodeMap[r.id]?.node || '解析中'}</td>

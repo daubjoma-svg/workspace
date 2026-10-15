@@ -58,25 +58,25 @@ function extractReply(type, data) {
  */
 async function testProvider(provider, apiKey) {
   if (!provider || provider.type === 'mock') return mockResult(provider);
-  // trae-cli：走本机 traecli 进程做一次真实调用（不依赖 HTTP API）
+  // trae-cli：走本机 traecli 进程做一次真实调用（不依赖 HTTP API）。
+  // runTraeCli 内部会套 Seatbelt 沙箱并构造隔离环境，这里只透传 token。
   if (provider.type === 'trae-cli') {
-    const { execFile } = require('child_process');
+    const { parseTraeCliJsonl, runTraeCli } = require('../llm-call');
     const bin = process.env.TRAECLI_BIN || '/Users/admin/.local/bin/traecli';
-    return new Promise((resolve, reject) => {
-      execFile(bin, ['--print', '--output-format', 'json', '--query-timeout', '40s', '只回复两个字：你好'], {
-        timeout: 60000, // traecli 含登录 token 交换 + 模型推理，10s 不够；单独 60s
-        env: { ...process.env, HOME: process.env.HOME || '/Users/admin', TRAECLI_PERSONAL_ACCESS_TOKEN: apiKey || '' },
-        maxBuffer: 20 * 1024 * 1024,
-      }, (err, stdout) => {
-        if (err) return reject(new Error(`Trae CLI 调用失败：${String(err.message).slice(0, 150)}`));
-        try {
-          const data = JSON.parse(stdout);
-          const reply = data?.message?.content;
-          if (!reply) return reject(new Error('Trae CLI 返回无内容'));
-          return resolve({ reply: String(reply).slice(0, 100), model: data?.message?.extra?._source_model || 'trae-cli' });
-        } catch { return reject(new Error(`Trae CLI 输出解析失败：${String(stdout).slice(0, 150)}`)); }
-      });
+    const args = ['exec', '--skip-git-repo-check', '--json'];
+    if (provider.model) args.push('-m', provider.model);
+    args.push('只回复两个字：你好');
+    // traecli 含登录 token 交换 + 模型推理，10s 不够；单独 90s
+    const { code, stdout, stderr, timedOut, spawnError } = await runTraeCli(bin, args, {
+      timeoutMs: 90000,
+      env: { TRAECLI_PERSONAL_ACCESS_TOKEN: apiKey || '' },
     });
+    const reply = parseTraeCliJsonl(stdout);
+    if (reply) return { reply: reply.slice(0, 100), model: provider.model || 'trae-cli' };
+    if (timedOut) throw new Error('Trae CLI 调用超时');
+    if (spawnError) throw new Error(`Trae CLI 启动失败：${spawnError}`);
+    if (code !== 0) throw new Error(`Trae CLI 调用失败：${String(stderr || `exit ${code}`).slice(0, 200)}`);
+    throw new Error(`Trae CLI 返回无内容：${String(stdout).slice(0, 150)}`);
   }
   const { url, headers, body } = buildTestRequest(provider, apiKey);
   let res;

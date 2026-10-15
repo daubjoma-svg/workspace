@@ -15,7 +15,7 @@ const logger = require('./logger');
 const router = express.Router();
 
 // 注册可选角色白名单：ADMIN 必须排除（管理员只能由管理员在后台分配/提升）
-const ALLOWED_ROLES = ['CSM', 'PO', 'RD', 'QA'];
+const ALLOWED_ROLES = ['CSM', 'PO', 'RD', 'FE', 'QA'];
 const DEFAULT_ROLE = 'CSM';
 
 // 注册限流：同一 IP 固定窗口 1 分钟 ≤10 次，超限 429。
@@ -41,7 +41,7 @@ function isRateLimited(ip) {
   return b.count > REGISTER_MAX;
 }
 
-router.post('/auth/register', (req, res) => {
+router.post('/auth/register', async (req, res) => {
   if (isRateLimited(req.ip)) return res.status(429).json({ error: '注册过于频繁，请稍后再试' });
 
   const { username, password: plain, name, feishu_key, role } = req.body || {};
@@ -58,17 +58,19 @@ router.post('/auth/register', (req, res) => {
   if (pwd.length < 6) return res.status(400).json({ error: '密码长度至少 6 位' });
   if (fkey.length > 128) return res.status(400).json({ error: '飞书账号长度超限' });
 
-  if (db.prepare('SELECT id FROM users WHERE username=?').get(uname)) {
+  if (await db.one('SELECT id FROM users WHERE username=?', [uname])) {
     return res.status(409).json({ error: '用户名已存在' });
   }
 
-  const r = db.prepare('INSERT INTO users(username,password,name,role,feishu_key) VALUES(?,?,?,?,?)')
-    .run(uname, password.store(pwd), displayName, roleVal, fkey);
+  const r = await db.execute(
+    'INSERT INTO users(username,password,name,role,feishu_key) VALUES(?,?,?,?,?)',
+    [uname, password.store(pwd), displayName, roleVal, fkey]
+  );
   const uid = r.lastInsertRowid;
 
   // 复用登录会话逻辑：注册即登录，返回 token（与 POST /auth/login 响应同构）
   const token = crypto.randomBytes(24).toString('hex');
-  db.prepare('INSERT INTO sessions(token,user_id) VALUES(?,?)').run(token, uid);
+  await db.execute('INSERT INTO sessions(token,user_id) VALUES(?,?)', [token, uid]);
   logger.info('register_ok', { user_id: uid, role: roleVal });
   res.status(201).json({ token, user: { id: uid, username: uname, name: displayName, role: roleVal } });
 });

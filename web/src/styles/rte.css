@@ -65,8 +65,9 @@
 .rte-content pre code { background: none; border: none; padding: 0; }
 .rte-content a { color: var(--primary); text-decoration: underline; }
 .rte-content img {
-  max-width: 100%; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); margin: 6px 0; display: block;
+  max-width: 100%; max-height: 200px; width: auto; height: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface-2); margin: 6px 0; display: block;
 }
 .rte-content blockquote {
   border-left: 3px solid var(--border-strong);
@@ -119,7 +120,11 @@
 .chat-bubble :is(p, ul, ol, h1, h2, h3, h4) { margin: 4px 0; }
 .chat-bubble ul, .chat-bubble ol { padding-left: 20px; }
 .chat-bubble img {
-  max-width: 100%; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); margin: 4px 0; display: block;
+  max-width: 100%; max-height: 220px; width: auto; height: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface-2);
+  margin: 4px 0; display: block; cursor: zoom-in;
+  transition: border-color var(--motion-fast) var(--ease-standard);
 }
+.chat-bubble img:hover { border-color: var(--primary); }
 .chat-bubble a { color: var(--primary); text-decoration: underline; }

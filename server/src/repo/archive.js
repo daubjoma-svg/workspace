@@ -76,17 +76,20 @@ function replaceSnapshotDir(dest) {
 
 /** GIT 拉取：拉 GitLab archive 解压到快照目录。branch 强制 master，token 走全局配置 */
 async function syncModule(moduleId) {
-  const m = db.prepare('SELECT * FROM code_modules WHERE id=?').get(moduleId);
+  const m = await db.one('SELECT * FROM code_modules WHERE id=?', [moduleId]);
   if (!m) throw new Error('模块不存在');
   assertSafeRelPath(m.sub_path, 'sub_path');
   // 目录名用 gitlab_project_id（已由 DB UNIQUE 约束保证只含合法字符；额外转码防奇葩字符）
   const dirKey = String(m.gitlab_project_id).replace(/[^A-Za-z0-9._-]/g, '_');
 
-  db.prepare("UPDATE code_modules SET sync_status='SYNCING', error_msg=NULL WHERE id=?").run(m.id);
+  await db.execute(
+    "UPDATE code_modules SET sync_status='SYNCING', error_msg=NULL WHERE id=?",
+    [m.id]
+  );
   const started = Date.now();
   try {
     const ref = 'master';
-    const token = gitlabApi.getGitlabCfg().token || '';
+    const token = (await gitlabApi.getGitlabCfg()).token || '';
     const res = await gitlabApi.fetchArchive(m.gitlab_project_id, ref, m.sub_path || '', token);
     const declared = Number(res.headers.get('content-length') || 0);
     if (declared) assertSizeLimit(declared);
@@ -103,12 +106,18 @@ async function syncModule(moduleId) {
 
     const sha = await gitlabApi.fetchCommitSha(m.gitlab_project_id, ref, token);
     const files = walk(destReal);
-    db.prepare(`UPDATE code_modules SET sync_status='OK', last_synced_at=datetime('now','localtime'),
-      commit_sha=?, file_count=?, error_msg=NULL WHERE id=?`).run(sha, files.length, m.id);
+    await db.execute(
+      `UPDATE code_modules SET sync_status='OK', last_synced_at=NOW(),
+        commit_sha=?, file_count=?, error_msg=NULL WHERE id=?`,
+      [sha, files.length, m.id]
+    );
     logger.info('module_sync_ok', { module: dirKey, files: files.length, bytes: buf.length, ms: Date.now() - started });
     return { ok: true, file_count: files.length, commit_sha: sha };
   } catch (e) {
-    db.prepare("UPDATE code_modules SET sync_status='FAILED', error_msg=? WHERE id=?").run(e.message, m.id);
+    await db.execute(
+      "UPDATE code_modules SET sync_status='FAILED', error_msg=? WHERE id=?",
+      [e.message, m.id]
+    );
     logger.warn('module_sync_failed', { module: dirKey, reason: e.code || e.message, ms: Date.now() - started });
     throw e;
   }

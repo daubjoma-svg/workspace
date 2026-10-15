@@ -12,6 +12,22 @@
 - **产物留痕**：评估报告、PRD（版本）、研发提示词、测试用例、时间线全留痕
 
 ## 快速开始
+
+### Docker Compose（推荐部署方式）
+
+```bash
+cp .env.example .env
+# 填写 DB_PASSWORD、MYSQL_ROOT_PASSWORD、SOP_MASTER_KEY 和 APP_BASE_URL
+docker compose up -d --build
+curl -fsS http://127.0.0.1:4000/api/health
+```
+
+完整服务器部署、HTTPS、备份和恢复步骤见 [`docs/docker-deploy.md`](docs/docker-deploy.md)。
+
+### 本地开发
+
+本地开发需要先准备 MySQL 8，并按 `server/.env.example` 创建 `server/.env`。
+
 ```bash
 # 后端（端口 4000，含静态托管前端）
 cd server && npm install && npm start
@@ -32,11 +48,13 @@ cd web && npm run build   # 产物由 server 直接托管
 | csm01 | 123456 | CSM |
 | po01 | 123456 | 产品 |
 | rd01 | 123456 | 研发 |
+| fe01 | 123456 | 前端 |
 | qa01 | 123456 | 测试 |
 
 ## AI 说明
 - 默认使用**内置 Mock**（离线可演示，输出结构化示例）。
 - 在「管理后台 → AI 配置」添加真实 LLM（Anthropic Claude / OpenAI 兼容协议，如 Kimi、DeepSeek），启用后自动切换真实调用，失败自动降级 Mock。
+- **主机隔离（沙箱）**：AI 子进程一律运行在只读沙箱内——只能读「模块管理」里已同步的代码仓库快照，不能读写主机任何其他文件、不能执行危险命令、网络仅限 LLM API 出站；子进程环境不携带服务器密钥。设计与验证见 [docs/sandbox.md](docs/sandbox.md)，边界自检：`bash server/scripts/verify-sandbox.sh`。
 
 ## 技术栈
-Express + better-sqlite3（WAL） · React 18 + TypeScript + Vite · 无 ORM、零外部服务依赖
+Express + MySQL 8 · React 18 + TypeScript + Vite · Docker Compose

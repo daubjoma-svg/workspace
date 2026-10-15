@@ -7,12 +7,12 @@
 
 const { db } = require('./db');
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const token = req.headers['x-token'];
   if (!token) return res.status(401).json({ error: '未登录' });
-  const s = db.prepare('SELECT * FROM sessions WHERE token=?').get(token);
+  const s = await db.one('SELECT * FROM sessions WHERE token=?', [token]);
   if (!s) return res.status(401).json({ error: '会话失效' });
-  const u = db.prepare('SELECT id,username,name,role FROM users WHERE id=?').get(s.user_id);
+  const u = await db.one('SELECT id,username,name,role FROM users WHERE id=?', [s.user_id]);
   if (!u) return res.status(401).json({ error: '会话失效' });   // 用户已被删除但会话残留
   req.user = u;
   return next();

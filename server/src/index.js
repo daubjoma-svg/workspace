@@ -2,6 +2,9 @@
 
 'use strict';
 
+// 必须最先加载：从 server/.env 补齐 DB/SOP_MASTER_KEY 等配置，供后续模块读取。
+require('./env');
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -13,11 +16,10 @@ const secret = require('./crypto/secret');
 // 必须在任何读写凭据的模块加载前执行。
 secret.assertMasterKeyOrExit(logger);
 
-const { router } = require('./routes');
-const admin = require('./admin');
 const { health, setMasterKeyStatus } = require('./health');
-const { runMigrations, verifyMasterKey } = require('./migrate');
 const seed = require('./seed');
+const { verifyConnection, close } = require('./db');
+const { runSchemaMigrations } = require('./db-migrator');
 
 const app = express();
 // 上传接口的图片 base64 可达 ~6.7MB（5MB 图片经 base64 膨胀），超出全局 5mb 限制，
@@ -27,11 +29,6 @@ app.use(express.json({ limit: '5mb' }));
 
 // 健康检查必须在 /api 前缀下：catch-all 只排除 /api，挂在别处会被 HTML 兜底成假绿。
 app.use('/api', health);
-// ADR-007：/api/v1 与 /api 双挂载，新端点以 /api/v1 为准，存量调用保持可用。
-app.use('/api/v1', router);
-app.use('/api', router);
-app.use('/api/v1/admin', admin);
-app.use('/api/admin', admin);
 
 // 图片上传目录：启动即保证存在；/uploads 只读静态托管，图片 URL 公开（前端拼 http://localhost:4000 前缀）
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -59,10 +56,6 @@ app.use((err, req, res, _next) => {
 const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-setMasterKeyStatus(verifyMasterKey());   // 先自检存量密文，再迁移（迁移只加密未加密的行）
-runMigrations();
-seed();
-
 function lanIps() {
   const nets = os.networkInterfaces();
   const out = [];
@@ -74,7 +67,38 @@ function lanIps() {
   return out;
 }
 
-app.listen(PORT, HOST, () => {
-  logger.info('server_started', { host: HOST, port: PORT, url: `http://localhost:${PORT}` });
-  for (const ip of lanIps()) logger.info('lan_url', { url: `http://${ip}:${PORT}` });
+async function start() {
+  await verifyConnection();
+  await runSchemaMigrations();
+  await seed();
+  // 路由模块在表结构完成后再加载，避免启动期模块自检访问未建表数据库。
+  // 数据迁移：存量库的 AI 节点提示词升级为「按需求规模裁剪」版本（幂等）。
+  try {
+    await require('./migrate').runMigrations();
+  } catch (e) {
+    logger.error('data_migration_failed', { reason: e.message });
+  }
+  const { router } = require('./routes');
+  const admin = require('./admin');
+  // 自愈：重启会杀掉进程内的 AI 执行，先把上次遗留的 AI_RUNNING 需求落成 AI_FAILED，
+  // 否则它们没有 worker 会去结束，前端会永远显示「AI 处理中」。自愈失败不应阻断启动。
+  try {
+    await require('./engine').recoverOrphanedRuns();
+  } catch (e) {
+    logger.error('ai_orphan_recover_failed', { reason: e.message });
+  }
+  app.use('/api/v1', router);
+  app.use('/api', router);
+  app.use('/api/v1/admin', admin);
+  app.use('/api/admin', admin);
+  app.listen(PORT, HOST, () => {
+    logger.info('server_started', { host: HOST, port: PORT, url: `http://localhost:${PORT}` });
+    for (const ip of lanIps()) logger.info('lan_url', { url: `http://${ip}:${PORT}` });
+  });
+}
+
+start().catch((error) => {
+  logger.error('server_start_failed', { reason: error.message });
+  close().catch(() => {});
+  process.exitCode = 1;
 });

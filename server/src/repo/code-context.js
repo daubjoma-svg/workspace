@@ -107,21 +107,21 @@ function keyFilesContent(mod, { maxFiles = 8, maxCharsPerFile = 2500, maxTotal =
  * 接受业务模块 ID 列表，自动 JOIN 出挂载的代码仓库；
  * 返回的 modules 每条对应一个 code_module，business_module_name 标注所属业务。
  */
-function buildCodeContext(businessModuleIds, opts = {}) {
+async function buildCodeContext(businessModuleIds, opts = {}) {
   if (!businessModuleIds || !businessModuleIds.length) return null;
   // v0.7：business_module → business_module_codes 多对多 → code_modules
-  const rows = db.prepare(`
-    SELECT bm.name AS business_name, bmc.path_prefix, cm.*
+  const rows = await db.many(`
+    SELECT bm.name AS business_name, bm.type AS business_module_type, bmc.path_prefix, cm.*
     FROM business_module_codes bmc
     JOIN business_modules bm ON bm.id = bmc.business_module_id
     JOIN code_modules cm ON cm.id = bmc.code_module_id
-    WHERE bmc.business_module_id IN (${businessModuleIds.map(() => '?').join(',')})`).all(...businessModuleIds);
+    WHERE bmc.business_module_id IN (${businessModuleIds.map(() => '?').join(',')})`, [...businessModuleIds]);
   if (!rows.length) return null;
   const synced = rows.filter((r) => r.sync_status === 'OK');
   if (!synced.length) {
     return {
       note: '关联的业务模块尚未同步代码(无可用快照)',
-      modules: rows.map((r) => ({ business_module: r.business_name, repo: r.gitlab_project_path || r.gitlab_project_id, status: r.sync_status })),
+      modules: rows.map((r) => ({ business_module: r.business_name, module_type: r.business_module_type, repo: r.gitlab_project_path || r.gitlab_project_id, status: r.sync_status })),
     };
   }
   return {
@@ -129,6 +129,7 @@ function buildCodeContext(businessModuleIds, opts = {}) {
       const mod = { ...r, sub_path: r.path_prefix || r.sub_path };
       return {
         business_module: r.business_name,
+        module_type: r.business_module_type,
         repo_id: r.gitlab_project_id,
         repo_path: r.gitlab_project_path,
         branch: r.branch,

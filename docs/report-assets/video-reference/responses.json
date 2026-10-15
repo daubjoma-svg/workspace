@@ -1,0 +1,167 @@
+[
+  {
+    "status": 307,
+    "contentType": "",
+    "url": "http://v.douyin.com/Ia9xB1HTjxA/"
+  },
+  {
+    "status": 302,
+    "contentType": "text/html; charset=utf-8",
+    "url": "https://v.douyin.com/Ia9xB1HTjxA/"
+  },
+  {
+    "status": 200,
+    "contentType": "text/html; charset=UTF-8",
+    "url": "https://www.iesdouyin.com/share/video/7683917142516862218/?region=CN&mid=7683917207901915955&u_code=3gckad57h5j3&did=MS4wLjABAAAAmYDEfg7rIKnTOSY8kpIBYkY9AvQ7f993-0wIoP9sph0&iid=MS4wLjABAAAA6wW-fnJ4qltFExy46qQq16Tb8i7Gbn2AYjyZBvw_c5vrccXP4TzMKWCvRDQx9GNR&with_sec_did=1&video_share_track_ver=&titleType=title&share_sign=fPLc.NZFPEDL7ClM6WjdVGcCK3co2Z_FtLGSkhbs_FI-&share_version=390900&ts=1789095210&from_aid=1128&from_ssr=1&share_track_info=%7B%22link_description_type%22:%22%22%7D&timestamp=1789095337&utm_campaign=client_share&app=aweme&utm_medium=ios&tt_from=more&utm_source=more"
+  },
+  {
+    "status": 200,
+    "contentType": "text/css; charset=utf-8",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/css/video.93fe9936.css"
+  },
+  {
+    "status": 200,
+    "contentType": "text/css; charset=utf-8",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/css/async/video_(id)/page.e6657e04.css"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/lib-react.0f859d87.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/lib-axios.251165c1.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf3-short.ibytedapm.com/slardar/fe/sdk-web/browser.cn.js?bid=aweme_share&globalName=slardar"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/lib-polyfill.5f7f1705.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/argus-builder-strategy.45d542af.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/lib-router.fc9101fb.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/3535.9e012fc9.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/3087.d13bb92a.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/8625.fafea44f.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/21.0f366cd8.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/9944.316bf4c0.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/async/4836.dc1c4017.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/async/4095.ce14d1c4.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/async/3982.4b3601ef.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/async/video_(id)/page.5ca75285.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/6302.b72a23f1.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/8361.aa837c62.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/video.e1eefc0a.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/6531.b78c418d.js"
+  },
+  {
+    "status": 200,
+    "contentType": "application/javascript",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/js/async/AdaptLoginHeader.d113e854.js"
+  },
+  {
+    "status": 200,
+    "contentType": "text/css; charset=utf-8",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/css/async/AdaptLoginHeader.86df99a1.css"
+  },
+  {
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "url": "https://mon.zijieapi.com/monitor_web/settings/browser-settings?bid=aweme_share&store=1"
+  },
+  {
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "url": "https://www.iesdouyin.com/web/api/v2/aweme/post/?reflow_source=reflow_page&web_id=7685655902292313635&device_id=7685655902292313635&aid=1128&from_did=MS4wLjABAAAAmYDEfg7rIKnTOSY8kpIBYkY9AvQ7f993-0wIoP9sph0&user_cip=36.112.204.37&count=15&max_cursor=0&reflow_id=PDoQg9wnSqLSxFYNvhrkitw4zCYe0uGmt%2FRYnYRrYpJxRWK00f%2Bo%2BcYMgA7Wjrn2QYvLaHgohaC9CLFaAd0kPY8TAyMbbbg5TuPyhkW9w%2F7EaG4ARk6aEgdjY4PyEVIvNgsPtBszKQ5asaXcFYJ%2FIg%3D%3D&item_ids=7683917142516862218&a_bogus=D64P58IoCEgXe0GTNNl9CmYbphvtzgBd4dxehyFjoAQJnC-Z1flFbaVCJzfqU653lf5CC2soC4Gbqgb9drJtEWn072rspjYU9Ss2jVt4q4o7eI256tqKpVj0h9IyjX%2Fblt95wCWwy2h8-UXitwpwqgATZK%2FAX5KJUdVXD3VXDMFMl5694RPv0iW%3D"
+  },
+  {
+    "status": 200,
+    "contentType": "image/png",
+    "url": "https://lf-douyin-mobile.bytecdn.com/obj/growth-douyin-share/growth/douyin_ug/static/image/logo-1128.fea0a850.png"
+  },
+  {
+    "status": 200,
+    "contentType": "image/vnd.microsoft.icon",
+    "url": "https://sf1-cdn-tos.douyinstatic.com/obj/eden-cn/kpchkeh7upepld/fe_app_new/favicon_v2.ico"
+  },
+  {
+    "status": 204,
+    "contentType": "",
+    "url": "https://mon.zijieapi.com/monitor_browser/collect/batch/?biz_id=aweme_share"
+  },
+  {
+    "status": 204,
+    "contentType": "",
+    "url": "https://mon.zijieapi.com/monitor_browser/collect/batch/?biz_id=aweme_share"
+  },
+  {
+    "status": 204,
+    "contentType": "",
+    "url": "https://mon.zijieapi.com/monitor_browser/collect/batch/?biz_id=aweme_share"
+  }
+]

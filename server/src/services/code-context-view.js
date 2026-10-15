@@ -17,9 +17,12 @@ const DEV_PROMPT_OPTS = { withFiles: true, maxFiles: 6 };
 const MAX_CHARS_PER_FILE = 2500;
 const BUDGET_CHARS = 16000;      // SPEC §10：代码上下文注入 ≤16000 字符
 
-function mappingIdsOf(requirement) {
+async function mappingIdsOf(requirement) {
   // v0.7：业务模块 ID 替代旧 mapping_id（CSM 提单时选业务模块，AI 上下文按业务模块收集挂载的代码仓库）
-  const rows = db.prepare('SELECT business_module_id FROM requirement_business_modules WHERE requirement_id=?').all(requirement.id);
+  const rows = await db.many(
+    'SELECT business_module_id FROM requirement_business_modules WHERE requirement_id=?',
+    [requirement.id]
+  );
   if (rows.length) return rows.map((r) => r.business_module_id);
   // 回落到冗余列（v0.6 是 mapping_id，新 v0.7 是 business_module_id）兼容历史数据
   return String(requirement.module_ids || '')
@@ -43,11 +46,11 @@ function emptyView(note, modules = []) {
  * 组装 openapi components.schemas.CodeContextResponse。
  * @returns {object} 永远返回对象；无可用上下文时 modules 为空数组并带 note
  */
-function buildCodeContextView(requirement) {
-  const mids = mappingIdsOf(requirement);
+async function buildCodeContextView(requirement) {
+  const mids = await mappingIdsOf(requirement);
   if (!mids.length) return emptyView('该需求未关联平台模块，AI 未读取任何代码');
 
-  const ctx = buildCodeContext(mids, DEV_PROMPT_OPTS);
+  const ctx = await buildCodeContext(mids, DEV_PROMPT_OPTS);
   if (!ctx) return emptyView('关联的平台模块已失效或不存在');
   if (!Array.isArray(ctx.modules) || !ctx.modules.length) return emptyView(ctx.note || '无可用代码快照');
   if (ctx.note) {

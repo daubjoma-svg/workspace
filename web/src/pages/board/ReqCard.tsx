@@ -24,7 +24,8 @@ export function ReqCard({ r, nodeName, nodes, onOpen, accent }: ReqCardProps) {
   const pendingClarifies = openCount(r);
   const owners = [
     r.po_name && `产:${r.po_name}`,
-    r.rd_name && `研:${r.rd_name}`,
+    r.rd_name && `后:${r.rd_name}`,
+    r.fe_name && `前:${r.fe_name}`,
     r.qa_name && `测:${r.qa_name}`,
   ].filter(Boolean).join(' ');
 

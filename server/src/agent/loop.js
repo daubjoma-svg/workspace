@@ -78,7 +78,7 @@ async function callOnce(provider, apiKey, messages, sys, timeoutMs) {
  * @returns {Promise<{answer:string, steps:number, used_tools:string[]}>}
  */
 async function runAgent({ sys, user, repos, maxSteps = DEFAULT_MAX_STEPS }) {
-  const provider = activeProvider();
+  const provider = await activeProvider();
   const apiKey = provider && provider.type !== 'mock' ? resolveApiKey(provider) : null;
   // trae-cli 走本地进程（本机登录态），无需 API key；其他类型必须有 key
   if (!provider || provider.type === 'mock') {

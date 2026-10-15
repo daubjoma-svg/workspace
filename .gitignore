@@ -15,6 +15,7 @@ server/data/
 
 .DS_Store
 *.log
+backups/
 
 # 本地代理会话、临时脚本缓存及 Vite 运行时配置，不属于项目交付内容
 .cache/
@@ -25,3 +26,6 @@ web/vite.config.ts.timestamp-*.mjs
 # 前端调试过程生成的临时脚本和截图
 web/scripts/.*-tmp.*
 web/scripts/shots/
+
+# IDE 本地配置
+.idea/

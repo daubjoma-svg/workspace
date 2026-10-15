@@ -8,8 +8,14 @@ export default defineConfig({
     emptyOutDir: false,
   },
   server: {
+    // 开发模式允许同一局域网内的设备访问 Vite 页面。
+    host: '0.0.0.0',
     port: 5173,
-    proxy: { '/api': 'http://localhost:4000' },
+    proxy: {
+      '/api': 'http://localhost:4000',
+      // 上传图片是静态资源，不经过 /api；开发模式也需代理到后端。
+      '/uploads': 'http://localhost:4000',
+    },
     // design-system/design-tokens.css 位于 vite root(web/) 之外，需放行仓库根目录
     fs: { allow: ['..'] },
   },

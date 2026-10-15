@@ -54,7 +54,7 @@ async function planSearch(apiKey, req, treeText, focus) {
   const desc = String(req.description || '').replace(/<[^>]+>/g, ' ').slice(0, 400);
   const focusLine = focus === 'evaluate'
     ? '目标是评估需求合理性与影响面，重点找：相关业务类、对外接口、状态枚举、表结构。'
-    : '目标是写开发提示词，重点找：改动点所在类/方法、状态枚举定义（如员工在职状态）、审批/流程逻辑。';
+    : '目标是先透析问题再写开发提示词：优先验证是否存在全量读取/全量展示、分页请求参数与分页返回、搜索策略、提交后刷新策略，以及同一能力被哪些页面复用；确认根因后才找直接相关的改动点与接口。';
   const prompt = [
     '你是 10 年经验研发负责人，要在下面的代码仓库里定位需求相关代码。' + focusLine,
     '给出搜索计划，只输出 JSON（不要输出其他文字）：',
@@ -82,10 +82,10 @@ async function planSearch(apiKey, req, treeText, focus) {
     const files = (Array.isArray(plan.files) ? plan.files : [])
       .map((f) => String(f).trim()).filter(Boolean).slice(0, MAX_PLAN_FILES);
     if (!keywords.length && !files.length) return null;
-    logger.info({ event: 'evidence_plan', req: req.id, keywords, files });
+    logger.info('evidence_plan', { req: req.id, keywords, files });
     return { keywords, files };
   } catch (e) {
-    logger.warn({ event: 'evidence_plan_failed', req: req.id, reason: String(e.message || e).slice(0, 120) });
+    logger.warn('evidence_plan_failed', { req: req.id, reason: String(e.message || e).slice(0, 120) });
     return null;
   }
 }
@@ -147,7 +147,7 @@ async function collectEvidence(apiKey, req, repos, { focus = 'dev', fallbackKeyw
   // 总预算控制：超出部分截尾（优先保留前面的 grep 证据与仓库结构）
   let text = sections.join('\n\n');
   if (text.length > TOTAL_BUDGET_CHARS) text = text.slice(0, TOTAL_BUDGET_CHARS) + '\n...(证据超预算截断)';
-  logger.info({ event: 'evidence_collected', req: req.id, chars: text.length, files: filesUsed });
+  logger.info('evidence_collected', { req: req.id, chars: text.length, files: filesUsed });
   return { text, filesUsed };
 }
 
